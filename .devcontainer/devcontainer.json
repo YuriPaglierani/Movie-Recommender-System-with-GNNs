@@ -1,10 +1,13 @@
 {
-    "name": "Python 3 with Pip",
-    "image": "mcr.microsoft.com/devcontainers/python:3",
+    "name": "Python 3 with Conda",
+    "build": {
+        "dockerfile": "Dockerfile",
+        "context": "."
+    },
     "settings": {},
     "extensions": [
         "ms-python.python",
         "ms-python.vscode-pylance"
     ],
-    "postCreateCommand": "source /opt/miniconda/bin/activate recsys_env"
+    "postCreateCommand": "source /opt/miniconda/bin/activate myenv"
 }
