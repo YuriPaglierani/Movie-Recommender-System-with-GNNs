@@ -1,0 +1,10 @@
+{
+    "name": "Python 3 with Pip",
+    "image": "mcr.microsoft.com/devcontainers/python:3",
+    "settings": {},
+    "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance"
+    ],
+    "postCreateCommand": "pip install -r requirements.txt"
+}
