@@ -6,5 +6,5 @@
         "ms-python.python",
         "ms-python.vscode-pylance"
     ],
-    "postCreateCommand": "source /opt/miniconda/bin/activate myenv"
+    "postCreateCommand": "source /opt/miniconda/bin/activate recsys_env"
 }
