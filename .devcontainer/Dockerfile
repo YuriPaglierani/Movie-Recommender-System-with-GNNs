@@ -19,4 +19,4 @@ COPY environment.yml /tmp/environment.yml
 WORKDIR /workspace
 
 # Activate the environment
-CMD ["bash", "-c", "source activate myenv && bash"]
+CMD ["bash", "-c", "source activate recsys_env && bash"]
