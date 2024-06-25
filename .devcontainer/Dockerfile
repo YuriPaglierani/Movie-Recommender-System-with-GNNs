@@ -1,4 +1,4 @@
-# Use the official image as a parent image
+# Use the official Python image as a base image
 FROM mcr.microsoft.com/devcontainers/python:3
 
 # Install Miniconda
@@ -14,6 +14,9 @@ RUN conda init bash
 
 # Copy environment.yml to the working directory
 COPY environment.yml /tmp/environment.yml
+
+# Create the Conda environment
+RUN conda env create -f /tmp/environment.yml
 
 # Set the working directory
 WORKDIR /workspace
