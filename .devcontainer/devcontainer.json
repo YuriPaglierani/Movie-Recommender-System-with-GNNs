@@ -6,5 +6,5 @@
         "ms-python.python",
         "ms-python.vscode-pylance"
     ],
-    "postCreateCommand": "pip install -r environment.yml"
+    "postCreateCommand": "source /opt/miniconda/bin/activate myenv"
 }
