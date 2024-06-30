@@ -45,8 +45,13 @@ def load_movielens_data():
     movies = pd.read_csv(os.path.join(DATA_DIR, "movies.csv"))
     users = pd.DataFrame({'userId': ratings['userId'].unique()})
     
+    # if it doesn't exist the file with the movie genres, create it in csv
+    if not os.path.exists(os.path.join(DATA_DIR, "movie_genres.csv")):
+        genres = get_movie_genres(movies)
+        pd.DataFrame(genres, columns=['genre']).to_csv(os.path.join(DATA_DIR, "movie_genres.csv"), index=False)
+        
     print("Dataset loaded successfully.")
-    
+        
     return users, movies, ratings
 
 def get_movie_genres(movies):

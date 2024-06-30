@@ -1,11 +1,21 @@
 import dash
-import dash_core_components as dcc
-import dash_html_components as html
-from dash.dependencies import Input, Output, State
 import plotly.graph_objs as go
 import requests
+import os
+import sys
+import pandas as pd
+from dash import dcc, html
+from dash.dependencies import Input, Output, State
+
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.abspath(os.path.join(current_dir, '..'))
+sys.path.append(project_root)
+
 from data.dataset_handler import get_movie_genres
 
+DATA_DIR = "data/movielens-25m"
+# Load the movies dataset
+movies = pd.read_csv(os.path.join(DATA_DIR, "movies.csv"))
 # Initialize the Dash app
 app = dash.Dash(__name__)
 
@@ -24,7 +34,7 @@ app.layout = html.Div([
         html.H2('New User Recommendations'),
         dcc.Dropdown(
             id='genre-dropdown',
-            options=[{'label': genre, 'value': genre} for genre in get_movie_genres()],
+            options=[{'label': genre, 'value': genre} for genre in get_movie_genres(movies)],
             multi=True,
             placeholder='Select favorite genres'
         ),
@@ -77,7 +87,7 @@ def update_new_user_recommendations(n_clicks, genres):
     Input('recommend-button', 'n_clicks')
 )
 def update_genre_distribution(n_clicks):
-    genres = get_movie_genres()
+    genres = get_movie_genres(movies)
     genre_counts = {genre: 0 for genre in genres}
     
     for _, movie in movies.iterrows():
