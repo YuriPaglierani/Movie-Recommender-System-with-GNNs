@@ -15,11 +15,8 @@ class LightGCN(nn.Module):
         
         nn.init.normal_(self.embedding.weight, std=0.1)
 
-    def forward(self, edge_index, batch_size=None):
+    def forward(self, edge_index):
         x = self.embedding.weight
-        
-        if batch_size is not None:
-            x = x[:batch_size]
         
         layer_wise_embedding = [x]
         
@@ -29,17 +26,20 @@ class LightGCN(nn.Module):
         
         final_embedding = sum(layer_wise_embedding) / (self.num_layers + 1)
         
-        if batch_size is not None:
-            user_embedding, item_embedding = final_embedding[:self.num_users], final_embedding[self.num_users:]
-        else:
-            user_embedding, item_embedding = torch.split(final_embedding, [self.num_users, self.num_items])
+        user_embedding, item_embedding = torch.split(final_embedding, [self.num_users, self.num_items])
         
         return user_embedding, item_embedding
 
     def get_embedding(self, user_indices=None, item_indices=None):
+        user_embedding, item_embedding = self.forward(None)
+        
         if user_indices is not None:
-            return self.forward(None)[0][user_indices]
+            return user_embedding[user_indices]
         elif item_indices is not None:
-            return self.forward(None)[1][item_indices]
+            return item_embedding[item_indices]
         else:
-            return self.forward(None)
+            return user_embedding, item_embedding
+
+    def predict(self, user_indices, item_indices):
+        user_embedding, item_embedding = self.get_embedding()
+        return (user_embedding[user_indices] * item_embedding[item_indices]).sum(dim=1)
