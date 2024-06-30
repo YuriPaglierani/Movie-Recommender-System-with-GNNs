@@ -1,0 +1,24 @@
+name: recsys_env
+channels:
+  - defaults
+  - pytorch
+  - pyg
+  - conda-forge
+dependencies:
+  - python=3.8
+  - numpy
+  - pandas
+  - scikit-learn
+  - flask
+  - plotly
+  - dash
+  - requests
+  - pytorch=2.3.1
+  - torchvision=0.15.2
+  - torchaudio=2.3.1
+  - pip
+  - pip:
+    # - torch-scatter torch-sparse -f https://data.pyg.org/whl/torch-2.0.0+cpu.html
+    # - torch-cluster==1.6.0
+    # - torch-spline-conv==1.2.1
+    - torch-geometric==2.4.0
