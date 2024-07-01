@@ -1,17 +1,32 @@
 import torch
 import torch.optim as optim
+import numpy as np
+import torch.nn.functional as F
+
+from torch import nn, optim, Tensor
+from torch_geometric.utils import structured_negative_sampling
+from torch_geometric.nn.conv.gcn_conv import gcn_norm
+from tqdm import tqdm
 from torch_geometric.utils import negative_sampling
 from sklearn.metrics import roc_auc_score, ndcg_score
-import numpy as np
 
-def bpr_loss(pos_scores, neg_scores):
-    return -torch.log(torch.sigmoid(pos_scores - neg_scores)).mean()
+def bpr_loss(emb_users_final, emb_users, emb_pos_items_final, emb_pos_items, emb_neg_items_final, emb_neg_items, bpr_coeff=1e-6):
+    reg_loss = bpr_coeff * (emb_users.norm().pow(2) +
+                        emb_pos_items.norm().pow(2) +
+                        emb_neg_items.norm().pow(2))
+
+    pos_ratings = torch.mul(emb_users_final, emb_pos_items_final).sum(dim=-1)
+    neg_ratings = torch.mul(emb_users_final, emb_neg_items_final).sum(dim=-1)
+
+    bpr_loss = torch.mean(torch.nn.functional.softplus(pos_ratings - neg_ratings))
+    
+    return -bpr_loss + reg_loss
 
 def train(model, optimizer, train_loader, device):
     model.train()
     total_loss = 0
     
-    for batch in train_loader:
+    for batch in tqdm(train_loader):
         optimizer.zero_grad()
         
         batch = batch.to(device)
@@ -21,7 +36,9 @@ def train(model, optimizer, train_loader, device):
         pos_scores = (user_emb[batch.edge_index[0]] * item_emb[batch.edge_index[1]]).sum(dim=1)
         
         # Negative sampling
-        neg_edge_index = negative_sampling(batch.edge_index, num_nodes=batch.num_nodes)
+        neg_edge_index = negative_sampling(batch.edge_index, num_nodes=batch.num_nodes, num_neg_samples=batch.edge_index.size(1))
+        # Ensure neg_edge_index is within bounds
+        neg_edge_index = neg_edge_index.clamp(0, batch.num_nodes - 1)
         neg_scores = (user_emb[neg_edge_index[0]] * item_emb[neg_edge_index[1]]).sum(dim=1)
         
         loss = bpr_loss(pos_scores, neg_scores)

@@ -90,13 +90,13 @@ class MovieLensDataHandler:
         # Free up memory
         del self.ratings
         
-    def split_data(self, test_size=0.2, val_size=0.1):
+    def split_data(self, train_size=0.9):
         print("Splitting data...")
         num_interactions = self.edge_index.shape[1]
         all_indices = np.arange(num_interactions)
         
-        train_val_indices, test_indices = train_test_split(all_indices, test_size=test_size, shuffle=True)
-        train_indices, val_indices = train_test_split(train_val_indices, test_size=val_size, shuffle=True)
+        train_indices, val_test_indices = train_test_split(all_indices, train_size=train_size, shuffle=True)
+        val_indices, test_indices = train_test_split(val_test_indices, test_size=0.5, shuffle=True)
         
         self.train_dataset = self._create_dataset(train_indices)
         self.val_dataset = self._create_dataset(val_indices)
@@ -105,11 +105,10 @@ class MovieLensDataHandler:
     def _create_dataset(self, indices):
         return MovieLensDataset(self.edge_index[:, indices].t())
     
-    def get_dataloaders(self, batch_size=1024, num_clusters=10):
+    def get_dataloaders(self, batch_size=4, num_clusters=20):
         print("Creating dataloaders...")
         cluster_data = ClusterData(self.graph_data, num_parts=num_clusters)
-        
-        train_loader = ClusterLoader(cluster_data, batch_size=batch_size, shuffle=True)
+        train_loader = ClusterLoader(cluster_data, batch_size=batch_size, shuffle=True) 
         val_loader = DataLoader(self.val_dataset, batch_size=batch_size, shuffle=False)
         test_loader = DataLoader(self.test_dataset, batch_size=batch_size, shuffle=False)
         
@@ -132,3 +131,8 @@ if __name__ == "__main__":
 
     data_handler.split_data()
     train_loader, val_loader, test_loader = data_handler.get_dataloaders()
+
+    # Print an iteration over the train loader
+    for batch in train_loader:
+        print(batch)
+        

@@ -5,7 +5,7 @@ import os
 import sys
 import pandas as pd
 from dash import dcc, html
-from dash.dependencies import Input, Output, State
+from import Input, Output, State
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.abspath(os.path.join(current_dir, '..'))
