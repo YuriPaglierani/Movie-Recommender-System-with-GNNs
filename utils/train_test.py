@@ -10,6 +10,78 @@ from tqdm import tqdm
 from torch_geometric.utils import negative_sampling
 from sklearn.metrics import roc_auc_score, ndcg_score
 
+def get_user_items(edge_index):
+    user_items = dict()
+    for i in range(edge_index.shape[1]):
+        user = edge_index[0][i].item()
+        item = edge_index[1][i].item()
+        if user not in user_items:
+            user_items[user] = []
+        user_items[user].append(item)
+    return user_items
+
+def compute_recall_at_k(items_ground_truth, items_predicted):
+    num_correct_pred = np.sum(items_predicted, axis=1)
+    num_total_pred = np.array([len(items_ground_truth[i]) for i in range(len(items_ground_truth))])
+
+    recall = np.mean(num_correct_pred / num_total_pred)
+
+    return recall
+
+def compute_ndcg_at_k(items_ground_truth, items_predicted, K=20):
+    test_matrix = np.zeros((len(items_predicted), K))
+
+    for i, items in enumerate(items_ground_truth):
+        length = min(len(items), K)
+        test_matrix[i, :length] = 1
+    
+    max_r = test_matrix
+    idcg = np.sum(max_r * 1. / np.log2(np.arange(2, K + 2)), axis=1)
+    dcg = items_predicted * (1. / np.log2(np.arange(2, K + 2)))
+    dcg = np.sum(dcg, axis=1)
+    idcg[idcg == 0.] = 1.
+    ndcg = dcg / idcg
+    ndcg[np.isnan(ndcg)] = 0.
+    
+    return np.mean(ndcg)
+
+# wrapper function to get evaluation metrics
+def get_metrics(model, edge_index, exclude_edge_indices):
+
+    ratings = torch.matmul(model.emb_users.weight, model.emb_items.weight.T)
+
+    for exclude_edge_index in exclude_edge_indices:
+        user_pos_items = get_user_items(exclude_edge_index)
+        exclude_users = []
+        exclude_items = []
+        for user, items in user_pos_items.items():
+            exclude_users.extend([user] * len(items))
+            exclude_items.extend(items)
+        ratings[exclude_users, exclude_items] = -1024
+
+    # get the top k recommended items for each user
+    _, top_K_items = torch.topk(ratings, k=K)
+
+    # get all unique users in evaluated split
+    users = edge_index[0].unique()
+
+    test_user_pos_items = get_user_items(edge_index)
+
+    # convert test user pos items dictionary into a list
+    test_user_pos_items_list = [test_user_pos_items[user.item()] for user in users]
+
+    # determine the correctness of topk predictions
+    items_predicted = []
+    for user in users:
+        ground_truth_items = test_user_pos_items[user.item()]
+        label = list(map(lambda x: x in ground_truth_items, top_K_items[user]))
+        items_predicted.append(label)
+
+    recall = compute_recall_at_k(test_user_pos_items_list, items_predicted)
+    ndcg = compute_ndcg_at_k(test_user_pos_items_list, items_predicted)
+
+    return recall, ndcg
+
 def bpr_loss(emb_users_final, emb_users, emb_pos_items_final, emb_pos_items, emb_neg_items_final, emb_neg_items, bpr_coeff=1e-6):
     reg_loss = bpr_coeff * (emb_users.norm().pow(2) +
                         emb_pos_items.norm().pow(2) +
@@ -22,32 +94,67 @@ def bpr_loss(emb_users_final, emb_users, emb_pos_items_final, emb_pos_items, emb
     
     return -bpr_loss + reg_loss
 
-def train(model, optimizer, train_loader, device):
+def sample_mini_batch(edge_index, batch_size=1024):
+    # Generate BATCH_SIZE random indices
+    index = np.random.choice(range(edge_index.shape[1]), size=batch_size)
+
+    # Generate negative sample indices
+    edge_index = structured_negative_sampling(edge_index)
+    edge_index = torch.stack(edge_index, dim=0)
+    
+    user_index = edge_index[0, index]
+    pos_item_index = edge_index[1, index]
+    neg_item_index = edge_index[2, index]
+    
+    return user_index, pos_item_index, neg_item_index
+
+# wrapper function to evaluate model
+def test(model, edge_index, exclude_edge_indices):
+
+    emb_users_final, emb_users, emb_items_final, emb_items = model.forward(edge_index)
+    user_indices, pos_item_indices, neg_item_indices = structured_negative_sampling(edge_index, contains_neg_self_loops=False)
+
+    emb_users_final, emb_users = emb_users_final[user_indices], emb_users[user_indices]
+
+    emb_pos_items_final, emb_pos_items = emb_items_final[pos_item_indices], emb_items[pos_item_indices]
+    emb_neg_items_final, emb_neg_items = emb_items_final[neg_item_indices], emb_items[neg_item_indices]
+
+    loss = bpr_loss(emb_users_final, emb_users, emb_pos_items_final, emb_pos_items, emb_neg_items_final, emb_neg_items).item()
+
+    recall, ndcg = get_metrics(model, edge_index, exclude_edge_indices)
+
+    return loss, recall, ndcg
+
+def train(model, optimizer, train_loader, device, batch_size=1024):
     model.train()
     total_loss = 0
     
-    for batch in tqdm(train_loader):
-        optimizer.zero_grad()
+    for cluster in tqdm(train_loader):
+        n_mini_batch = int(len(cluster)/batch_size)
+        cluster = cluster.to(device)
+
+        for _ in range(n_mini_batch):
+
+            optimizer.zero_grad()
+            
+            final_user_emb, final_item_emb = model(cluster.edge_index)
+            initial_user_emb, initial_item_emb = model.user_embedding.weight, model.item_embedding.weight
+            
+            user_indices, pos_item_indices, neg_item_indices = sample_mini_batch(cluster.edge_index, batch_size)
+
+            final_user_emb, initial_user_emb = final_user_emb[user_indices], initial_user_emb[user_indices]
+            # Positive Sampling
+            final_pos_item_emb, initial_pos_item_emb = final_item_emb[pos_item_indices], initial_item_emb[pos_item_indices]
+            # Negative Sampling
+            final_neg_item_emb, initial_neg_item_emb = final_item_emb[neg_item_indices], initial_item_emb[neg_item_indices]
+
+            train_loss = bpr_loss(final_user_emb, initial_user_emb, final_pos_item_emb, initial_pos_item_emb, final_neg_item_emb, initial_neg_item_emb)
+
+            train_loss.backward()
+            optimizer.step()
+            
+            total_loss += train_loss.item()
         
-        batch = batch.to(device)
-        user_emb, item_emb = model(batch.edge_index)
-        
-        # Positive examples
-        pos_scores = (user_emb[batch.edge_index[0]] * item_emb[batch.edge_index[1]]).sum(dim=1)
-        
-        # Negative sampling
-        neg_edge_index = negative_sampling(batch.edge_index, num_nodes=batch.num_nodes, num_neg_samples=batch.edge_index.size(1))
-        # Ensure neg_edge_index is within bounds
-        neg_edge_index = neg_edge_index.clamp(0, batch.num_nodes - 1)
-        neg_scores = (user_emb[neg_edge_index[0]] * item_emb[neg_edge_index[1]]).sum(dim=1)
-        
-        loss = bpr_loss(pos_scores, neg_scores)
-        
-        loss.backward()
-        optimizer.step()
-        
-        total_loss += loss.item()
-    
     return total_loss / len(train_loader)
 
 def evaluate(model, data_loader, device, k=10):

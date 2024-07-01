@@ -105,12 +105,13 @@ class MovieLensDataHandler:
     def _create_dataset(self, indices):
         return MovieLensDataset(self.edge_index[:, indices].t())
     
-    def get_dataloaders(self, batch_size=4, num_clusters=20):
+    def get_dataloaders(self, num_clusters=50):
         print("Creating dataloaders...")
         cluster_data = ClusterData(self.graph_data, num_parts=num_clusters)
-        train_loader = ClusterLoader(cluster_data, batch_size=batch_size, shuffle=True) 
-        val_loader = DataLoader(self.val_dataset, batch_size=batch_size, shuffle=False)
-        test_loader = DataLoader(self.test_dataset, batch_size=batch_size, shuffle=False)
+        train_loader = ClusterLoader(cluster_data, batch_size=10, shuffle=True) 
+        print(f"Len train loader: {len(train_loader)}")
+        val_loader = DataLoader(self.val_dataset, batch_size=num_clusters, shuffle=False)
+        test_loader = DataLoader(self.test_dataset, batch_size=num_clusters, shuffle=False)
         
         return train_loader, val_loader, test_loader
     
@@ -134,5 +135,8 @@ if __name__ == "__main__":
 
     # Print an iteration over the train loader
     for batch in train_loader:
+        if batch.edge_index.numel() == 0:
+            print("Empty batch detected, skipping...")
+            continue
         print(batch)
         
