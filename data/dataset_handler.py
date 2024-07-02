@@ -4,7 +4,6 @@ import zipfile
 import pandas as pd
 import numpy as np
 import torch
-from torch.utils.data import Dataset, DataLoader
 from torch_geometric.data import Data
 from torch_geometric.loader import ClusterData, ClusterLoader
 from torch_geometric.utils import to_undirected
@@ -115,7 +114,6 @@ class MovieLensDataHandler:
         # Convert user and movie IDs to sequential integers
         user_idx = self.ratings['userId'].map(self.user_id_map).values
         movie_idx = self.ratings['movieId'].map(self.movie_id_map).values
-    
         edge_index_np = np.vstack((user_idx, movie_idx))
         self.edge_index = torch.from_numpy(edge_index_np).long()
         self.edge_index = to_undirected(self.edge_index)
@@ -147,7 +145,7 @@ class MovieLensDataHandler:
 
         train_dataset = Data(edge_index=train_edges, 
                                num_nodes=self.num_users + self.num_movies)
-
+    
         val_dataset = Data(edge_index=val_edges, 
                                num_nodes=self.num_users + self.num_movies)
         
@@ -156,39 +154,31 @@ class MovieLensDataHandler:
 
         return train_dataset, val_dataset, test_dataset
 
-    def get_dataloaders(self, train_clusters: int = 100, val_test_clusters: int = 2) -> Tuple[ClusterLoader, DataLoader, DataLoader]:
+    def get_data(self, num_train_clusters: int = 100) -> Tuple[ClusterLoader, Data, Data]:
         """
-        Creates DataLoaders for train, validation, and test sets.
+        Creates ClusterLoader for train set, and return Data for validation, and test sets.
         
         This method uses ClusterData and ClusterLoader for efficient
         handling of large graphs.
         
         Args:
-            train_clusters (int): Number of clusters for training data.
-            val_test_clusters (int): Number of clusters for validation and test data.
+            num_train_clusters (int): Number of clusters for training data.
         
         Returns:
-            tuple: (train_loader, val_loader, test_loader)
+            tuple: (train_loader, val_dataset, test_dataset)
         """
 
         print("Creating dataloaders...")
         train_dataset, val_dataset, test_dataset = self.split_data()
 
-        cluster_train = ClusterData(train_dataset, num_parts=train_clusters)
+        print(train_dataset.edge_index.max())
+        cluster_train = ClusterData(train_dataset, num_parts=num_train_clusters)
         del train_dataset
-        cluster_val = ClusterData(val_dataset, num_parts=val_test_clusters)
-        del val_dataset
-        cluster_test = ClusterData(test_dataset, num_parts=val_test_clusters)
-        del test_dataset
 
         train_loader = ClusterLoader(cluster_train, batch_size=1, shuffle=True) 
         del cluster_train
-        val_loader = DataLoader(cluster_val, batch_size=1, shuffle=False)
-        del cluster_val
-        test_loader = DataLoader(cluster_test, batch_size=1, shuffle=False)
-        del cluster_test
         
-        return train_loader, val_loader, test_loader
+        return train_loader, val_dataset, test_dataset
     
     def get_num_users_items(self) -> Tuple[int, int]:
         """
@@ -207,10 +197,9 @@ if __name__ == "__main__":
     print("Number of users:", data_handler.get_num_users_items()[0])
     print("Number of items:", data_handler.get_num_users_items()[1])
     print("Number of relevant interactions:", data_handler.edge_index.shape[1])
-    print("Genre list:", data_handler.get_genre_list())
 
     data_handler.split_data()
-    train_loader, val_loader, test_loader = data_handler.get_dataloaders()
+    train_loader, val_data, test_data = data_handler.get_data()
 
     # Print an iteration over the train loader
     for batch in train_loader:
