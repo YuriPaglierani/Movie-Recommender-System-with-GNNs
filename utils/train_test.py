@@ -129,21 +129,18 @@ def train(model, optimizer, train_loader, device, batch_size=1024):
     model.train()
     total_loss = 0
     
-    for cluster in tqdm(train_loader):
-        n_mini_batch = int(len(cluster)/batch_size)
-        cluster = cluster.to(device)
+    for batch in tqdm(train_loader):
+        batch = batch.to(device)
+        optimizer.zero_grad()
 
-        for _ in range(n_mini_batch):
-
-            optimizer.zero_grad()
+        nodes = torch.unique(batch.edge_index)
+        final_user_emb, final_item_emb = model(batch.edge_index)
+        initial_user_emb, initial_item_emb = model.user_embedding.weight, model.item_embedding.weight
             
-            final_user_emb, final_item_emb = model(cluster.edge_index)
-            initial_user_emb, initial_item_emb = model.user_embedding.weight, model.item_embedding.weight
-            
-            user_indices, pos_item_indices, neg_item_indices = sample_mini_batch(cluster.edge_index, batch_size)
+        user_indices, pos_item_indices, neg_item_indices = sample_mini_batch(cluster.edge_index, batch_size)
 
-            final_user_emb, initial_user_emb = final_user_emb[user_indices], initial_user_emb[user_indices]
-            # Positive Sampling
+        final_user_emb, initial_user_emb = final_user_emb[user_indices], initial_user_emb[user_indices]
+        # Positive Sampling
             final_pos_item_emb, initial_pos_item_emb = final_item_emb[pos_item_indices], initial_item_emb[pos_item_indices]
             # Negative Sampling
             final_neg_item_emb, initial_neg_item_emb = final_item_emb[neg_item_indices], initial_item_emb[neg_item_indices]
@@ -190,8 +187,8 @@ def evaluate(model, data_loader, device, k=10):
     
     return np.mean(all_ndcg), np.mean(all_recall)
 
-def train_model(model, train_loader, val_loader, test_loader, device, epochs=1, lr=0.001, weight_decay=1e-5):
-    optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+def train_model(model, train_loader, val_loader, test_loader, device, epochs=1, lr=0.001):
+    optimizer = optim.Adam(model.parameters(), lr=lr)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=5)
     
     best_ndcg = 0
