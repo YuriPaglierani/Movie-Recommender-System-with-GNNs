@@ -94,11 +94,11 @@ def bpr_loss(emb_users_final, emb_users, emb_pos_items_final, emb_pos_items, emb
     
     return -bpr_loss + reg_loss
 
-def sample_negative(edge_index, num_users, num_items, device):
+def sample_negative(pos_idx, num_items, device):
     # this is a fake negative sampling function, but for sparse graphs this can work
 
-    neg_item_index = torch.randint(num_users, num_users + num_items, 
-                                  (edge_index.shape[1], ), device=device) 
+    neg_item_index = torch.randint(0, num_items, 
+                                  (pos_idx.shape[0], ), device=device) 
      
     return neg_item_index
 
@@ -110,14 +110,14 @@ def train(model, optimizer, train_loader, device):
         batch = batch.to(device)
         optimizer.zero_grad()
 
-        print(batch.edge_index[1].max(), batch.edge_index[1].min())
-        # tmp_edge_index = batch.edge_index
         final_user_emb, final_item_emb = model(batch.edge_index)
         initial_user_emb, initial_item_emb = model.user_embedding.weight, model.item_embedding.weight
 
-        user_indices, pos_item_indices = batch.edge_index[0], batch.edge_index[1]
-        neg_item_indices = sample_negative(batch.edge_index, model.num_users, model.num_items, device)
+        user_indices = batch.edge_index[0, batch.edge_index[0] < num_users]
+        pos_item_indices = batch.edge_index[1, batch.edge_index[1] >= num_users] - num_users
+        neg_item_indices = sample_negative(pos_item_indices, model.num_items, device)
         print("in the train loop")
+        
         # User Embeddings
         final_user_emb, initial_user_emb = final_user_emb[user_indices], initial_user_emb[user_indices]
         # Positive Sampling
