@@ -4,8 +4,8 @@ import zipfile
 import pandas as pd
 import numpy as np
 import torch
-from torch_geometric.data import Data
-from torch_geometric.loader import ClusterData, ClusterLoader
+from torch_geometric.data import Data, Batch
+from torch_geometric.loader import ClusterData, DataLoader
 from torch_geometric.utils import to_undirected
 from sklearn.model_selection import train_test_split
 from typing import Tuple, List, Dict
@@ -142,27 +142,26 @@ class MovieLensDataHandler:
         train_edges = self.edge_index[:, train_indices].contiguous()
         val_edges = self.edge_index[:, val_indices].contiguous()
         test_edges = self.edge_index[:, test_indices].contiguous()
-        n_id = torch.arange(self.num_users + self.num_movies, device=self.device)
 
         train_dataset = Data(edge_index=train_edges, 
                                num_nodes=self.num_users + self.num_movies)
-        train_dataset.n_id = n_id
+        train_dataset.n_id = torch.arange(self.num_users + self.num_movies, device=self.device)
     
         val_dataset = Data(edge_index=val_edges, 
                                num_nodes=self.num_users + self.num_movies)
-        val_dataset.n_id = n_id
+        val_dataset.n_id = torch.arange(self.num_users + self.num_movies, device=self.device)
 
         test_dataset = Data(edge_index=test_edges, 
                                num_nodes=self.num_users + self.num_movies)
-        test_dataset.n_id = n_id
+        test_dataset.n_id = torch.arange(self.num_users + self.num_movies, device=self.device)
 
         return train_dataset, val_dataset, test_dataset
 
-    def get_data(self, num_train_clusters: int = 100) -> Tuple[ClusterLoader, Data, Data]:
+    def get_data(self, num_train_clusters: int = 100) -> Tuple[DataLoader, Data, Data]:
         """
         Creates ClusterLoader for train set, and return Data for validation, and test sets.
         
-        This method uses ClusterData and ClusterLoader for efficient
+        This method uses ClusterData and DataLoader for efficient
         handling of large graphs.
         
         Args:
@@ -178,12 +177,18 @@ class MovieLensDataHandler:
         cluster_train = ClusterData(train_dataset, num_parts=num_train_clusters)
         del train_dataset
 
+        train_l = []
         for cluster in cluster_train:
-            print(cluster.edge_index.max())
-            print(cluster.n_id) #
-
-        train_loader = ClusterLoader(cluster_train, batch_size=1, shuffle=True) 
+            right_cluster = Data(edge_index=cluster.n_id[cluster.edge_index], 
+                                num_nodes=self.num_users + self.num_movies)
+            
+            right_cluster.n_id = torch.arange(self.num_users + self.num_movies, device=self.device)
+            train_l.append(right_cluster)
+        
         del cluster_train
+        # batched_train_set = Batch.from_data_list(train_l)
+        train_loader = DataLoader(train_l, batch_size=1, shuffle=True)
+        del train_l
         
         return train_loader, val_dataset, test_dataset
     
@@ -213,5 +218,4 @@ if __name__ == "__main__":
         if batch.edge_index.numel() == 0:
             print("Empty batch detected, skipping...")
             continue
-        print(batch)
-        
+        # print(batch)
