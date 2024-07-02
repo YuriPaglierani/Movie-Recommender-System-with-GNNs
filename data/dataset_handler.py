@@ -142,15 +142,19 @@ class MovieLensDataHandler:
         train_edges = self.edge_index[:, train_indices].contiguous()
         val_edges = self.edge_index[:, val_indices].contiguous()
         test_edges = self.edge_index[:, test_indices].contiguous()
+        n_id = torch.arange(self.num_users + self.num_movies, device=self.device)
 
         train_dataset = Data(edge_index=train_edges, 
                                num_nodes=self.num_users + self.num_movies)
+        train_dataset.n_id = n_id
     
         val_dataset = Data(edge_index=val_edges, 
                                num_nodes=self.num_users + self.num_movies)
-        
+        val_dataset.n_id = n_id
+
         test_dataset = Data(edge_index=test_edges, 
                                num_nodes=self.num_users + self.num_movies)
+        test_dataset.n_id = n_id
 
         return train_dataset, val_dataset, test_dataset
 
@@ -171,9 +175,12 @@ class MovieLensDataHandler:
         print("Creating dataloaders...")
         train_dataset, val_dataset, test_dataset = self.split_data()
 
-        print(train_dataset.edge_index.max())
         cluster_train = ClusterData(train_dataset, num_parts=num_train_clusters)
         del train_dataset
+
+        for cluster in cluster_train:
+            print(cluster.edge_index.max())
+            print(cluster.n_id) #
 
         train_loader = ClusterLoader(cluster_train, batch_size=1, shuffle=True) 
         del cluster_train
