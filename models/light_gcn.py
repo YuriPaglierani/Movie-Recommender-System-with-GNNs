@@ -109,7 +109,7 @@ class LightGCN(nn.Module):
         warnings.warn("Both indices not provided", UserWarning)
         return None, None        
 
-    def predict(self, user_indices, item_indices):
+    def predict_scores(self, user_indices, item_indices):
         """
         Predict the interaction scores for given user and item indices.
 
