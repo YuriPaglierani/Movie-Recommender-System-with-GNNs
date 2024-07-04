@@ -160,7 +160,7 @@ def train_model(model: torch.nn.Module, train_loader: torch.utils.data.DataLoade
     torch.save(model.state_dict(), 'best_model.pth')
     test_loss = evaluate(model, test_data, device)
     print(f'Test Loss: {test_loss:.4f}')
-    
+
     return model
 
 # Usage example
@@ -181,7 +181,11 @@ if __name__ == "__main__":
     train_loader, val_data, test_data = data_handler.get_data()
     num_users, num_items = data_handler.get_num_users_items()
     model = LightGCN(num_users, num_items, dim_h=64, num_layers=3)
-    
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = model.to(device)
-    trained_model = train_model(model, train_loader, val_data, test_data, device, epochs=100)
+
+    # if there are parameters load them
+    if os.path.exists('best_model.pth'):
+        model.load_state_dict(torch.load('best_model.pth', map_location=device))
+    
+    trained_model = train_model(model, train_loader, val_data, test_data, device, epochs=3)

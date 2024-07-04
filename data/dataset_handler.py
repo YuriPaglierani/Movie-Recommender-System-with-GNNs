@@ -18,8 +18,8 @@ def download_and_extract_dataset() -> None:
     Downloads and extracts the MovieLens 25M dataset.
     
     This function creates the data directory if it doesn't exist,
-    downloads the dataset zip file, extracts its contents,
-    and removes the zip file after extraction.
+    downloads the dataset zip file, extracts only the 'movies.csv' 
+    and 'ratings.csv' files, and removes the zip file after extraction.
     """
 
     if not os.path.exists(DATA_DIR):
@@ -33,20 +33,23 @@ def download_and_extract_dataset() -> None:
     with open(zip_path, 'wb') as f:
         f.write(response.content)
     
-    # Extract the dataset
+    # Extract only the required files
     print("Extracting dataset...")
     with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-        zip_ref.extractall(DATA_DIR)
+        for file in ["ml-25m/movies.csv", "ml-25m/ratings.csv"]:
+            zip_ref.extract(file, DATA_DIR)
+            extracted_file_path = os.path.join(DATA_DIR, file)
+            new_file_path = os.path.join(DATA_DIR, os.path.basename(file))
+            os.rename(extracted_file_path, new_file_path)
     
-    extracted_folder = os.path.join(DATA_DIR, "ml-25m")
-    for file in os.listdir(extracted_folder):
-        os.rename(os.path.join(extracted_folder, file), os.path.join(DATA_DIR, file))
-    os.rmdir(extracted_folder)
-
-    # Remove the zip file
+    # Remove the zip file and the intermediate folder
     os.remove(zip_path)
-    print("Dataset downloaded and extracted successfully.")
+    intermediate_folder = os.path.join(DATA_DIR, "ml-25m")
+    if os.path.exists(intermediate_folder):
+        os.rmdir(intermediate_folder)
     
+    print("Dataset downloaded and extracted successfully.")
+
 class MovieLensDataHandler:
     """
     Handles the MovieLens dataset processing and preparation for graph-based learning.

@@ -12,7 +12,8 @@ data_handler = MovieLensDataHandler(os.path.join(DATA_DIR, "ratings.csv"), os.pa
 data_handler.preprocess()
 num_users, num_items = data_handler.get_num_users_items()
 model = LightGCN(num_users, num_items)  # Replace with your actual model parameters
-model.load_state_dict(torch.load('best_model.pth', map_location='cpu'))
+device = torch.device('cpu')  # Change to 'cuda' if using GPU
+model.load_state_dict(torch.load('best_model.pth', map_location=device))
 model.eval()
 
 @app.route('/user_to_movie', methods=['POST'])
