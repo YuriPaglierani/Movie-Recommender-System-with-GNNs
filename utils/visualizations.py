@@ -1,5 +1,6 @@
 import plotly.graph_objs as go
 import networkx as nx
+import torch
 from sklearn.manifold import TSNE
 
 def create_user_item_graph(user_embedding, item_embedding, num_users=100, num_items=100):
