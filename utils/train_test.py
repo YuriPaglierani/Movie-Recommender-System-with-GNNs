@@ -6,6 +6,13 @@ from tqdm import tqdm
 from helpers import get_triplets_indices
 from typing import Tuple
 
+# for reproducibility
+torch.manual_seed(0)
+torch.cuda.manual_seed(0)
+torch.cuda.manual_seed_all(0)
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
+
 def bpr_loss(emb_users_final: torch.Tensor, emb_users: torch.Tensor, 
              emb_pos_items_final: torch.Tensor, emb_pos_items: torch.Tensor, 
              emb_neg_items_final: torch.Tensor, emb_neg_items: torch.Tensor, 

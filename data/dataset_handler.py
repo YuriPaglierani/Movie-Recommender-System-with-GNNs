@@ -13,6 +13,13 @@ from typing import Tuple, List, Dict
 MOVIELENS_25M_URL = "https://files.grouplens.org/datasets/movielens/ml-25m.zip"
 DATA_DIR = "data/movielens-25m"
 
+# for reproducibility
+torch.manual_seed(0)
+torch.cuda.manual_seed(0)
+torch.cuda.manual_seed_all(0)
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
+
 def download_and_extract_dataset() -> None:
     """
     Downloads and extracts the MovieLens 25M dataset.
@@ -137,30 +144,59 @@ class MovieLensDataHandler:
             tuple: (train_dataset, val_dataset, test_dataset) as PyG Data objects.
         """
 
-        print("Splitting data...")
-        num_interactions = self.edge_index.shape[1]
-        all_indices = np.arange(num_interactions)
-        
-        train_indices, val_test_indices = train_test_split(all_indices, train_size=train_size, shuffle=True)
-        val_indices, test_indices = train_test_split(val_test_indices, test_size=0.5, shuffle=True)
-        
-        train_edges = self.edge_index[:, train_indices].contiguous()
-        val_edges = self.edge_index[:, val_indices].contiguous()
-        test_edges = self.edge_index[:, test_indices].contiguous()
+        processed_data_path = "data/processed"
+        if not os.path.exists(processed_data_path):
 
-        train_dataset = Data(edge_index=train_edges, 
-                               num_nodes=self.num_users + self.num_movies).to(self.device)
-        train_dataset.n_id = torch.arange(self.num_users + self.num_movies, device=self.device)
-    
-        val_dataset = Data(edge_index=val_edges, 
-                               num_nodes=self.num_users + self.num_movies).to(self.device)
-        val_dataset.n_id = torch.arange(self.num_users + self.num_movies, device=self.device)
+            print("Splitting data...")
+            num_interactions = self.edge_index.shape[1]
+            all_indices = np.arange(num_interactions)
+            
+            train_indices, val_test_indices = train_test_split(all_indices, train_size=train_size, shuffle=True)
+            val_indices, test_indices = train_test_split(val_test_indices, test_size=0.5, shuffle=True)
+            
+            train_edges = self.edge_index[:, train_indices].contiguous()
+            val_edges = self.edge_index[:, val_indices].contiguous()
+            test_edges = self.edge_index[:, test_indices].contiguous()
 
-        test_dataset = Data(edge_index=test_edges, 
-                               num_nodes=self.num_users + self.num_movies).to(self.device)
-        test_dataset.n_id = torch.arange(self.num_users + self.num_movies, device=self.device)
+            train_dataset = Data(edge_index=train_edges, 
+                                num_nodes=self.num_users + self.num_movies).to(self.device)
+            train_dataset.n_id = torch.arange(self.num_users + self.num_movies, device=self.device)
+        
+            val_dataset = Data(edge_index=val_edges, 
+                                num_nodes=self.num_users + self.num_movies).to(self.device)
+            val_dataset.n_id = torch.arange(self.num_users + self.num_movies, device=self.device)
+
+            test_dataset = Data(edge_index=test_edges, 
+                                num_nodes=self.num_users + self.num_movies).to(self.device)
+            test_dataset.n_id = torch.arange(self.num_users + self.num_movies, device=self.device)
+        
+            self.save_data(train_dataset, val_dataset, test_dataset, processed_data_path)
+
+        else:
+            print("Loading preprocessed data...")
+            train_dataset = torch.load(os.path.join(processed_data_path, "train.pt"), map_location=self.device)
+            val_dataset = torch.load(os.path.join(processed_data_path, "val.pt"), map_location=self.device)
+            test_dataset = torch.load(os.path.join(processed_data_path, "test.pt"), map_location=self.device)
 
         return train_dataset, val_dataset, test_dataset
+
+    def save_data(self, train_dataset: Data, val_dataset: Data, test_dataset: Data, path: str) -> None:
+        """
+        Saves the train, validation, and test datasets to the given path.
+        
+        Args:
+            train_dataset (Data): Training dataset.
+            val_dataset (Data): Validation dataset.
+            test_dataset (Data): Test dataset.
+            path (str): Path to save the datasets.
+        """
+
+        if not os.path.exists(path):
+            os.makedirs(path)
+        
+        torch.save(train_dataset, os.path.join(path, "train.pt"))
+        torch.save(val_dataset, os.path.join(path, "val.pt"))
+        torch.save(test_dataset, os.path.join(path, "test.pt"))
 
     def get_data(self, num_train_clusters: int = 100) -> Tuple[DataLoader, Data, Data]:
         """

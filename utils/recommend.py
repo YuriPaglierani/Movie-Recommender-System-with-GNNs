@@ -1,6 +1,7 @@
 import torch
 
-def recommend(model, user_id, data_handler):
+def recommend_from_user(model, user_id, data_handler):
+
     user_id_map = data_handler.user_id_map
     movie_id_map = data_handler.movie_id_map
     movies = data_handler.movies
@@ -35,6 +36,37 @@ def recommend(model, user_id, data_handler):
     
     return {'recommendations': recommendations}
 
+def recommend_from_movie(model, movie_id, data_handler):
+    user_id_map = data_handler.user_id_map
+    movie_id_map = data_handler.movie_id_map
+
+    movie_index = movie_id_map.get(movie_id) - len(user_id_map)
+    
+    if movie_index is None:
+        return {'error': 'Invalid movie ID'}
+    
+    with torch.no_grad():
+        user_embedding, item_embedding = model.get_embeddings(user_indices=torch.arange(len(user_id_map)), 
+                                                                      item_indices=torch.tensor([movie_index]))
+    
+        scores = torch.matmul(user_embedding, item_embedding.t()).squeeze()
+        
+        # Get all user indices sorted by score
+        _, sorted_indices = torch.sort(scores, descending=True)
+        
+        top_users = []
+        for idx in sorted_indices:
+            user_id = list(user_id_map.keys())[list(user_id_map.values()).index(idx.item())]
+            top_users.append({
+                'user_id': user_id,
+                'score': scores[idx].item()
+            })
+            
+            if len(top_users) == 10:
+                break
+    
+    return {'top_users': top_users}
+
 if __name__ == '__main__':
     import os
     import sys
@@ -57,6 +89,7 @@ if __name__ == '__main__':
     model.eval()
     user_ids = data_handler.user_id_map.keys()
     user_id = list(user_ids)[0]
-
-    print(recommend(model, user_id, data_handler))
+    movie_id = list(data_handler.movie_id_map.keys())[0]
+    print(recommend_from_user(model, user_id, data_handler))
+    print(recommend_from_movie(model, movie_id, data_handler))
 
