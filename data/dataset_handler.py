@@ -183,7 +183,6 @@ class MovieLensDataHandler:
         else:
             print("Loading preprocessed data...")
             train_dataset, val_dataset, test_dataset = self.load_data(zip_file_path, processed_data_path)
-        
     
         return train_dataset, val_dataset, test_dataset
 
@@ -209,6 +208,10 @@ class MovieLensDataHandler:
         val_dataset = torch.load(os.path.join(extract_path, "val.pt"), map_location=self.device)
         test_dataset = torch.load(os.path.join(extract_path, "test.pt"), map_location=self.device)
     
+        os.remove(os.path.join(extract_path, "train.pt"))
+        os.remove(os.path.join(extract_path, "val.pt"))
+        os.remove(os.path.join(extract_path, "test.pt"))
+
         return train_dataset, val_dataset, test_dataset
     
     def save_data(self, train_dataset: Data, val_dataset: Data, test_dataset: Data, path: str) -> None:
