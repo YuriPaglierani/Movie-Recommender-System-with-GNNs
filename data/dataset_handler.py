@@ -84,7 +84,6 @@ class MovieLensDataHandler:
         
         self.ratings_path = ratings_path
         self.movies_path = movies_path
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         
         # Load only necessary columns and filter ratings
         self.ratings = pd.read_csv(ratings_path, usecols=['userId', 'movieId', 'rating'])
@@ -144,15 +143,15 @@ class MovieLensDataHandler:
         test_edges = self.edge_index[:, test_indices].contiguous()
 
         train_dataset = Data(edge_index=train_edges, 
-                               num_nodes=self.num_users + self.num_movies)
+                               num_nodes=self.num_users + self.num_movies).to(self.device)
         train_dataset.n_id = torch.arange(self.num_users + self.num_movies, device=self.device)
     
         val_dataset = Data(edge_index=val_edges, 
-                               num_nodes=self.num_users + self.num_movies)
+                               num_nodes=self.num_users + self.num_movies).to(self.device)
         val_dataset.n_id = torch.arange(self.num_users + self.num_movies, device=self.device)
 
         test_dataset = Data(edge_index=test_edges, 
-                               num_nodes=self.num_users + self.num_movies)
+                               num_nodes=self.num_users + self.num_movies).to(self.device)
         test_dataset.n_id = torch.arange(self.num_users + self.num_movies, device=self.device)
 
         return train_dataset, val_dataset, test_dataset

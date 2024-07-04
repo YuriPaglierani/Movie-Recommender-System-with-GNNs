@@ -59,7 +59,7 @@ def train(model: torch.nn.Module, optimizer: torch.optim.Optimizer,
     model.train()
     total_loss = 0
 
-    for batch in tqdm(train_loader):
+    for batch in train_loader:
         batch = batch.to(device)
         optimizer.zero_grad()
 
@@ -71,13 +71,12 @@ def train(model: torch.nn.Module, optimizer: torch.optim.Optimizer,
         optimizer.step()
             
         total_loss += train_loss.item()
-        break
 
     # in the val_loss we will use the last train batch for deleting some edges
-    val_loss, val_ndcg, val_recall = evaluate(model, batch, val_data, device)
+    val_loss = evaluate(model, batch, val_data, device)
     
     
-    return total_loss / len(train_loader), val_loss, val_ndcg, val_recall
+    return total_loss / len(train_loader), val_loss
 
 def compute_ndcg_at_k(items_ground_truth: List[List[int]], 
                       items_predicted: List[List[int]], 
@@ -169,50 +168,63 @@ def evaluate(model, train_data, test_data, device, k=20):
         test_data = test_data.to(device)
 
         embs = compute_embeddings(model, test_data, device)
-        final_user_emb = embs[0]
-        final_item_emb = embs[2]
         test_loss += bpr_loss(*embs).item()
 
-        unique_users = test_data.edge_index[0, test_data.edge_index[0] < model.num_users].unique()
-        item_indices = test_data.edge_index[1, test_data.edge_index[1] >= model.num_users] - model.num_users
+        # unique_users = test_data.edge_index[0, test_data.edge_index[0] < model.num_users].unique()
+        # item_indices = test_data.edge_index[1, test_data.edge_index[1] >= model.num_users] - model.num_users
 
-        # we will take only 10% of the users, for saving time 
-        l_users = unique_users.shape[0] // 1000
-        l_items = item_indices.unique().shape[0] // 10
+        # # we will take only 10% of the users, for saving time 
+        # l_users = unique_users.shape[0] // 1000
+        # l_items = item_indices.unique().shape[0] // 10
 
-        bench_users = torch.randperm(unique_users.shape[0])[:l_users].sort().values
-        bench_items = torch.randperm(item_indices.unique().shape[0])[:l_items].sort().values
+        # bench_users = torch.randperm(unique_users.shape[0])[:l_users].sort().values
+        # bench_items = torch.randperm(item_indices.unique().shape[0])[:l_items].sort().values
 
-        # get all possible combinations of users and items
-        score_indexes = torch.cartesian_prod(bench_users, bench_items).t()
+        # # get all possible combinations of users and items
+        # score_indexes = torch.cartesian_prod(bench_users, bench_items).t().to(device)
         
-        mask = (train_data.edge_index[0] < model.num_users) & (train_data.edge_index[1] >= model.num_users)
-        seen_edges = train_data.edge_index[:, mask]
-        seen_edges[1] = seen_edges[1] - model.num_users
+        # mask = (train_data.edge_index[0] < model.num_users) & (train_data.edge_index[1] >= model.num_users)
+        # seen_edges = train_data.edge_index[:, mask]
+        # seen_edges[1] = seen_edges[1] - model.num_users
         
-        score_indexes = is_in_feasible(score_indexes, seen_edges)
+        # score_indexes = is_in_feasible(score_indexes, seen_edges)
 
-        scores = torch.mul(final_user_emb[score_indexes[0]], final_item_emb[score_indexes[1]]).sum(dim=-1)
+        # scores = torch.mul(final_user_emb[score_indexes[0]], final_item_emb[score_indexes[1]]).sum(dim=-1)
 
-        # Get top-k recommendations
-        _, top_k_indices = torch.topk(scores, k=k)
+        # # Get top-k recommendations
+        # _, top_k_indices = torch.topk(scores, k=k)
         
-        users = score_indexes[0].unique()
-        test_user_pos_items = get_user_items(score_indexes)
-        # test_user_pos_items_list = [test_user_pos_items[user.item()] for user in users]
+        # users = score_indexes[0].unique()
+        # test_user_pos_items = get_user_items(test_data.edge_index)
 
-        # # determine the correctness of topk predictions
-        # items_predicted = []
+        # ndcgs = []
+        # recalls = []
+
         # for user in users:
-        #     ground_truth_items = test_user_pos_items[user.item()]
-        #     label = list(map(lambda x: x in ground_truth_items, top_k_indices[user]))
-        #     items_predicted.append(label)
+        #     user_items = test_user_pos_items.get(user.item(), [])
+        #     if not user_items:
+        #         continue
+        #     user_scores = scores[score_indexes[0] == user].cpu().numpy()
+        #     user_items_set = set(user_items)
 
-        # recall = compute_recall_at_k(test_user_pos_items_list, items_predicted)
-        # ndcg = compute_ndcg_at_k(test_user_pos_items_list, items_predicted)
+        #     # NDCG
+        #     ideal_dcg = np.sum(1 / np.log2(np.arange(2, min(len(user_items), k) + 2)))
+        #     dcg = np.sum([1 / np.log2(i + 2) if item in user_items_set else 0 
+        #                   for i, item in enumerate(user_scores.argsort()[::-1][:k])])
+        #     ndcg = dcg / ideal_dcg if ideal_dcg > 0 else 0
+        #     ndcgs.append(ndcg)
 
-    return test_loss, 10, 10
-    return test_loss, ndcg, recall
+        #     # Recall
+        #     top_k_items = set(user_scores.argsort()[::-1][:k])
+        #     recall = len(top_k_items.intersection(user_items_set)) / len(user_items_set)
+        #     recalls.append(recall)
+
+        # print(ndcgs)
+        # ndcg = np.mean(ndcgs) if ndcgs else 0
+        # recall = np.mean(recalls) if recalls else 0
+
+    # return test_loss, 10, 10
+    return test_loss
 
     
 def train_model(model: torch.nn.Module, train_loader: torch.utils.data.DataLoader, 
@@ -235,23 +247,13 @@ def train_model(model: torch.nn.Module, train_loader: torch.utils.data.DataLoade
     """
 
     optimizer = optim.Adam(model.parameters(), lr=lr)
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=5)
+    for epoch in tqdm(range(epochs)):
+        loss, val_loss = train(model, optimizer, train_loader, val_data, device)
+        print(f'Epoch: {epoch:03d}, Train Loss: {loss:.4f}, Val Loss: {val_loss:.4f}')
 
-    best_ndcg = 0
-    for epoch in range(epochs):
-        loss, val_loss, val_ndcg, val_recall = train(model, optimizer, train_loader, val_data, device)
-
-        scheduler.step(val_ndcg)
-
-        print(f'Epoch: {epoch:03d}, Train Loss: {loss:.4f}, \
-              Val Loss: {val_loss:.4f}, Val NDCG@20: {val_ndcg:.4f}, Val Recall@20: {val_recall:.4f}')
-
-        if val_ndcg > best_ndcg:
-            best_ndcg = val_ndcg
-            torch.save(model.state_dict(), 'best_model.pth')
     
+    torch.save(model.state_dict(), 'best_model.pth')
     # Load the best model and evaluate on test set
-    model.load_state_dict(torch.load('best_model.pth'))
     # test_loss, test_ndcg, test_recall = evaluate(model, test_data, device)
     # # print(f'Test NDCG@20: {test_ndcg:.4f}, Test Recall@20: {test_recall:.4f}')
     # print(f'Test Loss: {test_loss:.4f}, Test NDCG@20: {test_ndcg:.4f}, Test Recall@20: {test_recall:.4f}')
@@ -278,4 +280,4 @@ if __name__ == "__main__":
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = model.to(device)
-    trained_model = train_model(model, train_loader, val_data, test_data, device)
+    trained_model = train_model(model, train_loader, val_data, test_data, device, epochs=100)
