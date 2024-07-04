@@ -136,7 +136,7 @@ class MovieLensDataHandler:
         self.edge_index = to_undirected(self.edge_index)
     
     # @profile
-    def split_data(self, train_size: float = 0.9) -> Tuple[Data, Data, Data]:
+    def get_datasets(self, train_size: float = 0.9) -> Tuple[Data, Data, Data]:
         """
         Splits the data into train, validation, and test sets.
         
@@ -251,7 +251,7 @@ class MovieLensDataHandler:
         os.remove(test_path)
 
     # @profile
-    def get_data(self, num_train_clusters: int = 100) -> Tuple[DataLoader, Data, Data]:
+    def get_data_training(self, num_train_clusters: int = 100) -> Tuple[DataLoader, Data, Data]:
         """
         Creates ClusterLoader for train set, and return Data for validation, and test sets.
         
@@ -266,7 +266,7 @@ class MovieLensDataHandler:
         """
 
         print("Creating dataloaders...")
-        train_dataset, val_dataset, test_dataset = self.split_data()
+        train_dataset, val_dataset, test_dataset = self.get_datasets()
 
         cluster_train = ClusterData(train_dataset, num_parts=num_train_clusters)
         del train_dataset
@@ -302,7 +302,7 @@ if __name__ == "__main__":
     print("Number of items:", data_handler.get_num_users_items()[1])
     print("Number of relevant interactions:", data_handler.edge_index.shape[1])
 
-    train_loader, val_data, test_data = data_handler.get_data()
+    train_loader, val_data, test_data = data_handler.get_data_training()
 
     # Print an iteration over the train loader
     for batch in train_loader:
