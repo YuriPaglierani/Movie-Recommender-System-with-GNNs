@@ -14,12 +14,12 @@ from memory_profiler import profile
 MOVIELENS_25M_URL = "https://files.grouplens.org/datasets/movielens/ml-25m.zip"
 DATA_DIR = "data/movielens-25m"
 
-# # for reproducibility
-# torch.manual_seed(0)
-# torch.cuda.manual_seed(0)
-# torch.cuda.manual_seed_all(0)
-# torch.backends.cudnn.deterministic = True
-# torch.backends.cudnn.benchmark = False
+# for reproducibility
+torch.manual_seed(0)
+torch.cuda.manual_seed(0)
+torch.cuda.manual_seed_all(0)
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False 
 
 def download_and_extract_dataset() -> None:
     """
