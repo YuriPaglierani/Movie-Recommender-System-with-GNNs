@@ -59,7 +59,7 @@ def train(model: torch.nn.Module, optimizer: torch.optim.Optimizer,
     model.train()
     total_loss = 0
 
-    for batch in tqdm(train_loader):
+    for batch in train_loader:
         batch = batch.to(device)
         optimizer.zero_grad()
 
@@ -71,7 +71,6 @@ def train(model: torch.nn.Module, optimizer: torch.optim.Optimizer,
         optimizer.step()
             
         total_loss += train_loss.item()
-        break
 
     # in the val_loss we will use the last train batch for deleting some edges
     val_loss, val_ndcg, val_recall = evaluate(model, batch, val_data, device)
@@ -198,20 +197,35 @@ def evaluate(model, train_data, test_data, device, k=20):
         _, top_k_indices = torch.topk(scores, k=k)
         
         users = score_indexes[0].unique()
-        test_user_pos_items = get_user_items(score_indexes)
-        # test_user_pos_items_list = [test_user_pos_items[user.item()] for user in users]
+        test_user_pos_items = get_user_items(test_data.edge_index)
 
-        # # determine the correctness of topk predictions
-        # items_predicted = []
-        # for user in users:
-        #     ground_truth_items = test_user_pos_items[user.item()]
-        #     label = list(map(lambda x: x in ground_truth_items, top_k_indices[user]))
-        #     items_predicted.append(label)
+        ndcgs = []
+        recalls = []
 
-        # recall = compute_recall_at_k(test_user_pos_items_list, items_predicted)
-        # ndcg = compute_ndcg_at_k(test_user_pos_items_list, items_predicted)
+        for user in users:
+            user_items = test_user_pos_items.get(user.item(), [])
+            if not user_items:
+                continue
+            user_scores = scores[score_indexes[0] == user].cpu().numpy()
+            user_items_set = set(user_items)
 
-    return test_loss, 10, 10
+            # NDCG
+            ideal_dcg = np.sum(1 / np.log2(np.arange(2, min(len(user_items), k) + 2)))
+            dcg = np.sum([1 / np.log2(i + 2) if item in user_items_set else 0 
+                          for i, item in enumerate(user_scores.argsort()[::-1][:k])])
+            ndcg = dcg / ideal_dcg if ideal_dcg > 0 else 0
+            ndcgs.append(ndcg)
+
+            # Recall
+            top_k_items = set(user_scores.argsort()[::-1][:k])
+            recall = len(top_k_items.intersection(user_items_set)) / len(user_items_set)
+            recalls.append(recall)
+
+        print(ndcgs)
+        ndcg = np.mean(ndcgs) if ndcgs else 0
+        recall = np.mean(recalls) if recalls else 0
+
+    # return test_loss, 10, 10
     return test_loss, ndcg, recall
 
     
@@ -238,7 +252,7 @@ def train_model(model: torch.nn.Module, train_loader: torch.utils.data.DataLoade
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=5)
 
     best_ndcg = 0
-    for epoch in range(epochs):
+    for epoch in tqdm(range(epochs)):
         loss, val_loss, val_ndcg, val_recall = train(model, optimizer, train_loader, val_data, device)
 
         scheduler.step(val_ndcg)
@@ -278,4 +292,4 @@ if __name__ == "__main__":
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = model.to(device)
-    trained_model = train_model(model, train_loader, val_data, test_data, device)
+    trained_model = train_model(model, train_loader, val_data, test_data, device, epochs=6)
