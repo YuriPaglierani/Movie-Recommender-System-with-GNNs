@@ -168,6 +168,8 @@ def evaluate(model, train_data, test_data, device, k=20):
         test_data = test_data.to(device)
 
         embs = compute_embeddings(model, test_data, device)
+        final_user_emb = embs[0]
+        final_item_emb = embs[2]
         test_loss += bpr_loss(*embs).item()
 
         # unique_users = test_data.edge_index[0, test_data.edge_index[0] < model.num_users].unique()
@@ -222,8 +224,6 @@ def evaluate(model, train_data, test_data, device, k=20):
         # print(ndcgs)
         # ndcg = np.mean(ndcgs) if ndcgs else 0
         # recall = np.mean(recalls) if recalls else 0
-
-    # return test_loss, 10, 10
     return test_loss
 
     
@@ -247,13 +247,16 @@ def train_model(model: torch.nn.Module, train_loader: torch.utils.data.DataLoade
     """
 
     optimizer = optim.Adam(model.parameters(), lr=lr)
-    for epoch in tqdm(range(epochs)):
-        loss, val_loss = train(model, optimizer, train_loader, val_data, device)
-        print(f'Epoch: {epoch:03d}, Train Loss: {loss:.4f}, Val Loss: {val_loss:.4f}')
 
-    
+    for epoch in tqdm(range(epochs)):
+        loss, val_loss= train(model, optimizer, train_loader, val_data, device)
+
+        print(f'Epoch: {epoch:03d}, Train Loss: {loss:.4f}, \
+              Val Loss: {val_loss:.4f}')
     torch.save(model.state_dict(), 'best_model.pth')
+    
     # Load the best model and evaluate on test set
+    model.load_state_dict(torch.load('best_model.pth'))
     # test_loss, test_ndcg, test_recall = evaluate(model, test_data, device)
     # # print(f'Test NDCG@20: {test_ndcg:.4f}, Test Recall@20: {test_recall:.4f}')
     # print(f'Test Loss: {test_loss:.4f}, Test NDCG@20: {test_ndcg:.4f}, Test Recall@20: {test_recall:.4f}')
@@ -280,4 +283,4 @@ if __name__ == "__main__":
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = model.to(device)
-    trained_model = train_model(model, train_loader, val_data, test_data, device, epochs=100)
+    trained_model = train_model(model, train_loader, val_data, test_data, device, epochs=6)

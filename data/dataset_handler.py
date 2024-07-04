@@ -84,6 +84,7 @@ class MovieLensDataHandler:
         
         self.ratings_path = ratings_path
         self.movies_path = movies_path
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         
         # Load only necessary columns and filter ratings
         self.ratings = pd.read_csv(ratings_path, usecols=['userId', 'movieId', 'rating'])
