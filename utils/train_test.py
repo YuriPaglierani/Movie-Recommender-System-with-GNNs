@@ -1,12 +1,10 @@
 import torch
 import torch.optim as optim
-import numpy as np
 # Unfortunately, for the current version of torch geometric we cannot use the structured_negative_sampling function for Bipartite Graphs:(
 # from torch_geometric.utils import structured_negative_sampling
 from tqdm import tqdm
-from sklearn.metrics import ndcg_score
-from helpers import get_triplets_indices, is_in_feasible, get_user_items
-from typing import Tuple, List
+from helpers import get_triplets_indices
+from typing import Tuple
 
 def bpr_loss(emb_users_final: torch.Tensor, emb_users: torch.Tensor, 
              emb_pos_items_final: torch.Tensor, emb_pos_items: torch.Tensor, 
@@ -40,8 +38,8 @@ def bpr_loss(emb_users_final: torch.Tensor, emb_users: torch.Tensor,
     return -bpr_loss + reg_loss
 
 def train(model: torch.nn.Module, optimizer: torch.optim.Optimizer, 
-          train_loader: torch.utils.data.DataLoader, val_data: torch.Tensor, 
-          device: torch.device) -> Tuple[float, float, float, float]:
+          train_loader: torch.utils.data.DataLoader, device: torch.device
+          ) -> float:
     """
     Train the model for one epoch.
 
@@ -49,15 +47,15 @@ def train(model: torch.nn.Module, optimizer: torch.optim.Optimizer,
         model (torch.nn.Module): The model to train.
         optimizer (torch.optim.Optimizer): The optimizer to use.
         train_loader (torch.utils.data.DataLoader): DataLoader for training data.
-        val_data (torch.Tensor): Validation data.
         device (torch.device): Device to use for computation.
 
     Returns:
-        tuple[float, float, float, float]: Training loss, validation loss, validation NDCG, validation recall.
+        float: Training loss
     """
 
     model.train()
     total_loss = 0
+    total_w = 0
 
     for batch in train_loader:
         batch = batch.to(device)
@@ -69,64 +67,13 @@ def train(model: torch.nn.Module, optimizer: torch.optim.Optimizer,
 
         train_loss.backward()
         optimizer.step()
-            
-        total_loss += train_loss.item()
 
-    # in the val_loss we will use the last train batch for deleting some edges
-    val_loss = evaluate(model, batch, val_data, device)
-    
-    
-    return total_loss / len(train_loader), val_loss
+        w = batch.edge_index.shape[1]
+        total_w += w
 
-def compute_ndcg_at_k(items_ground_truth: List[List[int]], 
-                      items_predicted: List[List[int]], 
-                      K: int = 20) -> float:
-    """
-    Compute Normalized Discounted Cumulative Gain (NDCG) at K.
+        total_loss += train_loss.item() * w
 
-    Args:
-        items_ground_truth (list[list[int]]): Ground truth items for each user.
-        items_predicted (list[list[int]]): Predicted items for each user.
-        K (int): Number of items to consider.
-
-    Returns:
-        float: Computed NDCG@K score.
-    """
-
-    test_matrix = np.zeros((len(items_predicted), K))
-
-    for i, items in enumerate(items_ground_truth):
-        length = min(len(items), K)
-        test_matrix[i, :length] = 1
-    
-    max_r = test_matrix
-    idcg = np.sum(max_r * 1. / np.log2(np.arange(2, K + 2)), axis=1)
-    dcg = items_predicted * (1. / np.log2(np.arange(2, K + 2)))
-    dcg = np.sum(dcg, axis=1)
-    idcg[idcg == 0.] = 1.
-    ndcg = dcg / idcg
-    ndcg[np.isnan(ndcg)] = 0.
-    
-    return np.mean(ndcg)
-
-def compute_recall_at_k(items_ground_truth: List[List[int]], items_predicted: List[List[int]]) -> float:
-    """
-    Compute Recall at K.
-
-    Args:
-        items_ground_truth (list[list[int]]): Ground truth items for each user.
-        items_predicted (list[list[int]]): Predicted items for each user.
-
-    Returns:
-        float: Computed Recall@K score.
-    """
-
-    num_correct_pred = np.sum(items_predicted, axis=1)
-    num_total_pred = np.array([len(items_ground_truth[i]) for i in range(len(items_ground_truth))])
-
-    recall = np.mean(num_correct_pred / num_total_pred)
-
-    return recall
+    return total_loss / total_w
 
 def compute_embeddings(model: torch.nn.Module, 
                        data: torch.Tensor, 
@@ -140,7 +87,7 @@ def compute_embeddings(model: torch.nn.Module,
         device (torch.device): Device to use for computation.
 
     Returns:
-        tuple[torch.Tensor, ...]: Tuple containing various embeddings.
+        Tuple[torch.Tensor, ...]: Tuple containing various embeddings.
     """
 
     final_user_emb, final_item_emb = model(data.edge_index)
@@ -159,69 +106,27 @@ def compute_embeddings(model: torch.nn.Module,
 
     return final_user_emb, initial_user_emb, final_pos_item_emb, initial_pos_item_emb, final_neg_item_emb, initial_neg_item_emb
 
-def evaluate(model, train_data, test_data, device, k=20):
+def evaluate(model: torch.nn.Module, test_data: torch.Tensor, device: torch.device) -> float:
+    """
+    Evaluate the model on a test set.
+
+    Args:
+        model (torch.nn.Module): The model used.
+        test_data (torch.Tensor): Tensor containing the test data.
+        device (torch.device): Device to use for computation.
+
+    Returns:
+        float: Training loss
+    """
+
     model.eval()
     
-    test_loss = 0
     with torch.no_grad():
-        train_data.to(device)
         test_data = test_data.to(device)
 
         embs = compute_embeddings(model, test_data, device)
-        test_loss += bpr_loss(*embs).item()
+        test_loss = bpr_loss(*embs).item()
 
-        # unique_users = test_data.edge_index[0, test_data.edge_index[0] < model.num_users].unique()
-        # item_indices = test_data.edge_index[1, test_data.edge_index[1] >= model.num_users] - model.num_users
-
-        # # we will take only 10% of the users, for saving time 
-        # l_users = unique_users.shape[0] // 1000
-        # l_items = item_indices.unique().shape[0] // 10
-
-        # bench_users = torch.randperm(unique_users.shape[0])[:l_users].sort().values
-        # bench_items = torch.randperm(item_indices.unique().shape[0])[:l_items].sort().values
-
-        # # get all possible combinations of users and items
-        # score_indexes = torch.cartesian_prod(bench_users, bench_items).t().to(device)
-        
-        # mask = (train_data.edge_index[0] < model.num_users) & (train_data.edge_index[1] >= model.num_users)
-        # seen_edges = train_data.edge_index[:, mask]
-        # seen_edges[1] = seen_edges[1] - model.num_users
-        
-        # score_indexes = is_in_feasible(score_indexes, seen_edges)
-
-        # scores = torch.mul(final_user_emb[score_indexes[0]], final_item_emb[score_indexes[1]]).sum(dim=-1)
-
-        # # Get top-k recommendations
-        # _, top_k_indices = torch.topk(scores, k=k)
-        
-        # users = score_indexes[0].unique()
-        # test_user_pos_items = get_user_items(test_data.edge_index)
-
-        # ndcgs = []
-        # recalls = []
-
-        # for user in users:
-        #     user_items = test_user_pos_items.get(user.item(), [])
-        #     if not user_items:
-        #         continue
-        #     user_scores = scores[score_indexes[0] == user].cpu().numpy()
-        #     user_items_set = set(user_items)
-
-        #     # NDCG
-        #     ideal_dcg = np.sum(1 / np.log2(np.arange(2, min(len(user_items), k) + 2)))
-        #     dcg = np.sum([1 / np.log2(i + 2) if item in user_items_set else 0 
-        #                   for i, item in enumerate(user_scores.argsort()[::-1][:k])])
-        #     ndcg = dcg / ideal_dcg if ideal_dcg > 0 else 0
-        #     ndcgs.append(ndcg)
-
-        #     # Recall
-        #     top_k_items = set(user_scores.argsort()[::-1][:k])
-        #     recall = len(top_k_items.intersection(user_items_set)) / len(user_items_set)
-        #     recalls.append(recall)
-
-        # print(ndcgs)
-        # ndcg = np.mean(ndcgs) if ndcgs else 0
-        # recall = np.mean(recalls) if recalls else 0
     return test_loss
 
     
@@ -247,17 +152,15 @@ def train_model(model: torch.nn.Module, train_loader: torch.utils.data.DataLoade
     optimizer = optim.Adam(model.parameters(), lr=lr)
 
     for epoch in tqdm(range(epochs)):
-        loss, val_loss= train(model, optimizer, train_loader, val_data, device)
-
+        loss = train(model, optimizer, train_loader, device)
+        val_loss = evaluate(model, val_data, device)
         print(f'Epoch: {epoch:03d}, Train Loss: {loss:.4f}, \
               Val Loss: {val_loss:.4f}')
+        
     torch.save(model.state_dict(), 'best_model.pth')
+    test_loss = evaluate(model, test_data, device)
+    print(f'Test Loss: {test_loss:.4f}')
     
-    # Load the best model and evaluate on test set
-    model.load_state_dict(torch.load('best_model.pth'))
-    # test_loss, test_ndcg, test_recall = evaluate(model, test_data, device)
-    # # print(f'Test NDCG@20: {test_ndcg:.4f}, Test Recall@20: {test_recall:.4f}')
-    # print(f'Test Loss: {test_loss:.4f}, Test NDCG@20: {test_ndcg:.4f}, Test Recall@20: {test_recall:.4f}')
     return model
 
 # Usage example
