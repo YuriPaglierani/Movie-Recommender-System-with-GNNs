@@ -6,7 +6,7 @@ def run_flask():
     flask_app.run(port=8050)
 
 def run_dash():
-    dash_app.run_server(port=8050)
+    dash_app.run_server(port=5000)
 
 if __name__ == '__main__':
     flask_thread = threading.Thread(target=run_flask)
