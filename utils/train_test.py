@@ -168,8 +168,6 @@ def evaluate(model, train_data, test_data, device, k=20):
         test_data = test_data.to(device)
 
         embs = compute_embeddings(model, test_data, device)
-        final_user_emb = embs[0]
-        final_item_emb = embs[2]
         test_loss += bpr_loss(*embs).item()
 
         # unique_users = test_data.edge_index[0, test_data.edge_index[0] < model.num_users].unique()
@@ -283,4 +281,4 @@ if __name__ == "__main__":
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = model.to(device)
-    trained_model = train_model(model, train_loader, val_data, test_data, device, epochs=6)
+    trained_model = train_model(model, train_loader, val_data, test_data, device, epochs=100)
