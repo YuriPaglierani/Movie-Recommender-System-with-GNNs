@@ -3,7 +3,7 @@ from api.app import app as flask_app
 from frontend.dashboard import app as dash_app
 
 def run_flask():
-    flask_app.run(port=5000)
+    flask_app.run(port=8050)
 
 def run_dash():
     dash_app.run_server(port=8050)

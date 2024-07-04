@@ -98,8 +98,10 @@ class MovieLensDataHandler:
         
         # Create user and item mappings
         self.user_id_map = {id: i for i, id in enumerate(self.ratings['userId'].unique())}
+        self.id_user_map = {i: id for id, i in self.user_id_map.items()}
         self.movie_id_map = {id: i+self.num_users for i, id in enumerate(self.ratings['movieId'].unique())}
-        
+        self.id_movie_map = {i+self.num_users: id for id, i in self.movie_id_map.items()}
+
     def preprocess(self) -> None:
         """
         Preprocesses the loaded data.
