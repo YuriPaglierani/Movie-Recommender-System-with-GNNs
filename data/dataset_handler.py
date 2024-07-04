@@ -4,21 +4,22 @@ import zipfile
 import pandas as pd
 import numpy as np
 import torch
-from torch_geometric.data import Data, Batch
+from torch_geometric.data import Data
 from torch_geometric.loader import ClusterData, DataLoader
 from torch_geometric.utils import to_undirected
 from sklearn.model_selection import train_test_split
-from typing import Tuple, List, Dict
+from typing import Tuple, Dict
+from memory_profiler import profile
 
 MOVIELENS_25M_URL = "https://files.grouplens.org/datasets/movielens/ml-25m.zip"
 DATA_DIR = "data/movielens-25m"
 
-# for reproducibility
-torch.manual_seed(0)
-torch.cuda.manual_seed(0)
-torch.cuda.manual_seed_all(0)
-torch.backends.cudnn.deterministic = True
-torch.backends.cudnn.benchmark = False
+# # for reproducibility
+# torch.manual_seed(0)
+# torch.cuda.manual_seed(0)
+# torch.cuda.manual_seed_all(0)
+# torch.backends.cudnn.deterministic = True
+# torch.backends.cudnn.benchmark = False
 
 def download_and_extract_dataset() -> None:
     """
@@ -65,7 +66,7 @@ class MovieLensDataHandler:
     creating graph structures, and preparing data loaders for training and evaluation.
     
     """
-
+    # @profile
     def __init__(self, ratings_path: str, movies_path: str):
         """
         Initializes the MovieLensDataHandler.
@@ -101,7 +102,7 @@ class MovieLensDataHandler:
         self.ratings = self.ratings[self.ratings['rating'] >= 4]
         
         # Load only necessary columns from movies
-        self.movies = pd.read_csv(movies_path, usecols=['movieId', 'genres', 'title'])
+        self.movies = pd.read_csv(movies_path, usecols=['movieId', 'title'])
         
         self.num_users = self.ratings['userId'].nunique()
         self.num_movies = self.ratings['movieId'].nunique()
@@ -112,6 +113,7 @@ class MovieLensDataHandler:
         self.movie_id_map = {id: i+self.num_users for i, id in enumerate(self.ratings['movieId'].unique())}
         self.id_movie_map = {i+self.num_users: id for id, i in self.movie_id_map.items()}
 
+    # @profile
     def preprocess(self) -> None:
         """
         Preprocesses the loaded data.
@@ -126,13 +128,14 @@ class MovieLensDataHandler:
         # Convert user and movie IDs to sequential integers
         user_idx = self.ratings['userId'].map(self.user_id_map).values
         movie_idx = self.ratings['movieId'].map(self.movie_id_map).values
+        # Free up memory
+        del self.ratings
+
         edge_index_np = np.vstack((user_idx, movie_idx))
         self.edge_index = torch.from_numpy(edge_index_np).long()
         self.edge_index = to_undirected(self.edge_index)
-
-        # Free up memory
-        del self.ratings
-        
+    
+    # @profile
     def split_data(self, train_size: float = 0.9) -> Tuple[Data, Data, Data]:
         """
         Splits the data into train, validation, and test sets.
@@ -145,10 +148,15 @@ class MovieLensDataHandler:
         """
 
         processed_data_path = "data/processed"
-        if not os.path.exists(processed_data_path):
+        zip_file_path = os.path.join(processed_data_path, "splitted_datasets.zip")
 
+        if not os.path.exists(processed_data_path):
+            os.makedirs(processed_data_path)
+
+        if not os.path.exists(zip_file_path):
             print("Splitting data...")
             num_interactions = self.edge_index.shape[1]
+
             all_indices = np.arange(num_interactions)
             
             train_indices, val_test_indices = train_test_split(all_indices, train_size=train_size, shuffle=True)
@@ -169,17 +177,40 @@ class MovieLensDataHandler:
             test_dataset = Data(edge_index=test_edges, 
                                 num_nodes=self.num_users + self.num_movies).to(self.device)
             test_dataset.n_id = torch.arange(self.num_users + self.num_movies, device=self.device)
-        
-            self.save_data(train_dataset, val_dataset, test_dataset, processed_data_path)
 
+            print("Saving preprocessed data...")
+            self.save_data(train_dataset, val_dataset, test_dataset, processed_data_path)
         else:
             print("Loading preprocessed data...")
-            train_dataset = torch.load(os.path.join(processed_data_path, "train.pt"), map_location=self.device)
-            val_dataset = torch.load(os.path.join(processed_data_path, "val.pt"), map_location=self.device)
-            test_dataset = torch.load(os.path.join(processed_data_path, "test.pt"), map_location=self.device)
-
+            train_dataset, val_dataset, test_dataset = self.load_data(zip_file_path, processed_data_path)
+        
+    
         return train_dataset, val_dataset, test_dataset
 
+    def load_data(self, zip_path: str, extract_path: str) -> Tuple[Data, Data, Data]:
+        """
+        Loads the train, validation, and test datasets from a .zip file.
+        
+        Args:
+            zip_path (str): Path to the .zip file containing the datasets.
+            extract_path (str): Path to extract the datasets.
+            device (torch.device): The device to map the loaded datasets to.
+        
+        Returns:
+            train_dataset, val_dataset, test_dataset: Loaded datasets.
+        """
+
+        # Extract the zip file
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            zip_ref.extractall(extract_path)
+
+        # Load the datasets
+        train_dataset = torch.load(os.path.join(extract_path, "train.pt"), map_location=self.device)
+        val_dataset = torch.load(os.path.join(extract_path, "val.pt"), map_location=self.device)
+        test_dataset = torch.load(os.path.join(extract_path, "test.pt"), map_location=self.device)
+    
+        return train_dataset, val_dataset, test_dataset
+    
     def save_data(self, train_dataset: Data, val_dataset: Data, test_dataset: Data, path: str) -> None:
         """
         Saves the train, validation, and test datasets to the given path.
@@ -194,10 +225,29 @@ class MovieLensDataHandler:
         if not os.path.exists(path):
             os.makedirs(path)
         
-        torch.save(train_dataset, os.path.join(path, "train.pt"))
-        torch.save(val_dataset, os.path.join(path, "val.pt"))
-        torch.save(test_dataset, os.path.join(path, "test.pt"))
+        # Paths to save the datasets
+        train_path = os.path.join(path, "train.pt")
+        val_path = os.path.join(path, "val.pt")
+        test_path = os.path.join(path, "test.pt")
 
+        # Save the datasets
+        torch.save(train_dataset, train_path)
+        torch.save(val_dataset, val_path)
+        torch.save(test_dataset, test_path)
+
+        # Compress the files into a .zip archive
+        zip_path = os.path.join(path, "splitted_datasets.zip")
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            zipf.write(train_path, os.path.basename(train_path))
+            zipf.write(val_path, os.path.basename(val_path))
+            zipf.write(test_path, os.path.basename(test_path))
+
+
+        os.remove(train_path)
+        os.remove(val_path)
+        os.remove(test_path)
+
+    # @profile
     def get_data(self, num_train_clusters: int = 100) -> Tuple[DataLoader, Data, Data]:
         """
         Creates ClusterLoader for train set, and return Data for validation, and test sets.
@@ -227,7 +277,6 @@ class MovieLensDataHandler:
             train_l.append(right_cluster)
         
         del cluster_train
-        # batched_train_set = Batch.from_data_list(train_l)
         train_loader = DataLoader(train_l, batch_size=1, shuffle=True)
         del train_l
         
@@ -246,12 +295,10 @@ class MovieLensDataHandler:
 if __name__ == "__main__":
     data_handler = MovieLensDataHandler(os.path.join(DATA_DIR, "ratings.csv"), os.path.join(DATA_DIR, "movies.csv"))
     data_handler.preprocess()
-
     print("Number of users:", data_handler.get_num_users_items()[0])
     print("Number of items:", data_handler.get_num_users_items()[1])
     print("Number of relevant interactions:", data_handler.edge_index.shape[1])
 
-    data_handler.split_data()
     train_loader, val_data, test_data = data_handler.get_data()
 
     # Print an iteration over the train loader
