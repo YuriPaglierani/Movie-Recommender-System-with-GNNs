@@ -94,7 +94,7 @@ class MovieLensDataHandler:
         self.ratings = self.ratings[self.ratings['rating'] >= 4]
         
         # Load only necessary columns from movies
-        self.movies = pd.read_csv(movies_path, usecols=['movieId', 'genres'])
+        self.movies = pd.read_csv(movies_path, usecols=['movieId', 'genres', 'title'])
         
         self.num_users = self.ratings['userId'].nunique()
         self.num_movies = self.ratings['movieId'].nunique()
