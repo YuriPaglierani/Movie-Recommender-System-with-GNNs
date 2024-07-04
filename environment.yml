@@ -23,5 +23,3 @@ dependencies:
     # - torch-spline-conv==1.2.1
     - torch-geometric==2.4.0
     - tqdm
-    
-# conda install pytorch-sparse -c pyg # this works for torch sparse!
