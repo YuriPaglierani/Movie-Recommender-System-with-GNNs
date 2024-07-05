@@ -6,7 +6,7 @@ torch.cuda.manual_seed_all(0)
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False 
 
-def recommend_from_user(model, user_id, data_handler):
+def recommend_from_user(model, user_id, data_handler, excluded_train_items):
 
     user_id_map = data_handler.user_id_map
     movie_id_map = data_handler.movie_id_map
@@ -29,8 +29,11 @@ def recommend_from_user(model, user_id, data_handler):
         recommendations = []
 
         for idx in sorted_indices:
+            if idx.item() in excluded_train_items:
+                continue
+
             movie_id = list(movie_id_map.keys())[list(movie_id_map.values()).index(idx.item()+len(user_id_map))]
-            
+
             movie_info = movies[movies['movieId'] == movie_id].iloc[0]
             recommendations.append({
                 'title': movie_info['title'],
@@ -42,7 +45,7 @@ def recommend_from_user(model, user_id, data_handler):
     
     return {'recommendations': recommendations}
 
-def recommend_from_movie(model, movie_id, data_handler):
+def recommend_from_movie(model, movie_id, data_handler, excluded_train_users):
     user_id_map = data_handler.user_id_map
     movie_id_map = data_handler.movie_id_map
 
@@ -62,6 +65,8 @@ def recommend_from_movie(model, movie_id, data_handler):
         
         top_users = []
         for idx in sorted_indices:
+            if idx.item() in excluded_train_users:
+                continue
             user_id = list(user_id_map.keys())[list(user_id_map.values()).index(idx.item())]
             top_users.append({
                 'user_id': user_id,
@@ -96,6 +101,10 @@ if __name__ == '__main__':
     user_ids = data_handler.user_id_map.keys()
     user_id = list(user_ids)[0]
     movie_id = list(data_handler.movie_id_map.keys())[0]
-    print(recommend_from_user(model, user_id, data_handler))
-    print(recommend_from_movie(model, movie_id, data_handler))
+
+    train_data, _, _ = data_handler.get_datasets()
+    train_edge_items = train_data.edge_index[1, train_data.edge_index[0, :] == 0] - len(user_ids) # take items of user 0
+    train_edge_users = train_data.edge_index[0, train_data.edge_index[1, :]==0]
+    print(recommend_from_user(model, user_id, data_handler, train_edge_items))
+    print(recommend_from_movie(model, movie_id, data_handler, train_edge_users))
 

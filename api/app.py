@@ -3,7 +3,7 @@ import torch
 import os
 from models.light_gcn import LightGCN
 from data.dataset_handler import MovieLensDataHandler
-from utils.recommend import recommend_from_user
+from utils.recommend import recommend_from_user, recommend_from_movie
 
 # for reproducibility
 torch.manual_seed(0)
@@ -18,7 +18,6 @@ app = Flask(__name__)
 DATA_DIR = "data/movielens-25m"
 
 data_handler = MovieLensDataHandler(os.path.join(DATA_DIR, "ratings.csv"), os.path.join(DATA_DIR, "movies.csv"))
-data_handler.preprocess()
 
 num_users, num_items = data_handler.get_num_users_items()
 model = LightGCN(num_users, num_items)  # Replace with your actual model parameters
@@ -28,37 +27,25 @@ model.eval()
 
 @app.route('/user_to_movie', methods=['POST'])
 def user_to_movie():
-    user_id = request.json['user_id']
-    return jsonify(recommend_from_user(model, user_id, data_handler))
+    try:
+        user_id = request.json['user_id']
+        excluded_train_items = request.json['excluded_train_items']
+        result = recommend_from_user(model, user_id, data_handler, excluded_train_items)
+        return jsonify(result)
+    except Exception as e:
+        print(f"Error in /user_to_movie: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/movie_to_user', methods=['POST'])
 def movie_to_user():
-    movie_id = request.json['movie_id']
-    
-    # Convert movie_id to the format used by your model
-    movie_index = data_handler.movie_id_map.get(movie_id)
-    
-    if movie_index is None:
-        return jsonify({'error': 'Invalid movie ID'}), 400
-    
-    with torch.no_grad():
-        user_embedding, _ = model.get_final_embeddings(user_indices=torch.arange(data_handler.num_users))
-        _, item_embedding = model.get_final_embeddings(item_indices=torch.tensor([movie_index]))
-        
-        scores = torch.matmul(user_embedding, item_embedding.t()).squeeze()
-        
-        # Get top 10 user recommendations
-        top_scores, top_indices = torch.topk(scores, 10)
-        
-        top_users = []
-        for idx, score in zip(top_indices, top_scores):
-            user_id = list(data_handler.user_id_map.keys())[list(data_handler.user_id_map.values()).index(idx.item())]
-            top_users.append({
-                'user_id': user_id,
-                'score': score.item()
-            })
-    
-    return jsonify({'top_users': top_users})
+    try:
+        movie_id = request.json['movie_id']
+        excluded_train_users = request.json['excluded_train_users']
+        result = recommend_from_movie(model, movie_id, data_handler, excluded_train_users)
+        return jsonify(result)
+    except Exception as e:
+        print(f"Error in /movie_to_user: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/get_embeddings', methods=['GET'])
 def get_embeddings():
@@ -70,4 +57,4 @@ def get_embeddings():
         })
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, port=5000)

@@ -23,3 +23,4 @@ dependencies:
     # - torch-spline-conv==1.2.1
     - torch-geometric==2.4.0
     - tqdm
+    - dash-bootstrap-components

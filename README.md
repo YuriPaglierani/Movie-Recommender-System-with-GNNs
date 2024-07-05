@@ -47,6 +47,7 @@ This repository contains my project for the Exam of Information Retrieval @Unive
 Choose an option:
 * 1: User to Movie
 * 2: Movie to User
+
 Enter the User ID or Movie ID as prompted to get recommendations.
 
 ## Data

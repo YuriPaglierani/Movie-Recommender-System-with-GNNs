@@ -112,6 +112,7 @@ class MovieLensDataHandler:
         self.id_user_map = {i: id for id, i in self.user_id_map.items()}
         self.movie_id_map = {id: i+self.num_users for i, id in enumerate(self.ratings['movieId'].unique())}
         self.id_movie_map = {i+self.num_users: id for id, i in self.movie_id_map.items()}
+        self.preprocess()
 
     # @profile
     def preprocess(self) -> None:
@@ -297,7 +298,6 @@ class MovieLensDataHandler:
 
 if __name__ == "__main__":
     data_handler = MovieLensDataHandler(os.path.join(DATA_DIR, "ratings.csv"), os.path.join(DATA_DIR, "movies.csv"))
-    data_handler.preprocess()
     print("Number of users:", data_handler.get_num_users_items()[0])
     print("Number of items:", data_handler.get_num_users_items()[1])
     print("Number of relevant interactions:", data_handler.edge_index.shape[1])

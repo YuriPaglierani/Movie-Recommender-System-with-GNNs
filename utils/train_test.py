@@ -183,9 +183,7 @@ if __name__ == "__main__":
     from models.light_gcn import LightGCN
 
     data_handler = MovieLensDataHandler('data/movielens-25m/ratings.csv', 'data/movielens-25m/movies.csv')
-    data_handler.preprocess()
-    data_handler.split_data()
-    train_loader, val_data, test_data = data_handler.get_data()
+    train_loader, val_data, test_data = data_handler.get_data_training()
     num_users, num_items = data_handler.get_num_users_items()
     model = LightGCN(num_users, num_items, dim_h=64, num_layers=3)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
