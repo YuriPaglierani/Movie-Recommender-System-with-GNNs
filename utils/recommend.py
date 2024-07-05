@@ -1,4 +1,5 @@
 import torch
+from typing import List, Dict, Any, Union
 # for reproducibility
 torch.manual_seed(0)
 torch.cuda.manual_seed(0)
@@ -6,7 +7,19 @@ torch.cuda.manual_seed_all(0)
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False 
 
-def recommend_from_user(model, user_id, data_handler, excluded_train_items):
+def recommend_from_user(model: torch.nn.Module, user_id: int, data_handler: Any, excluded_train_items: List[int]) -> Dict[str, Union[str, List[Dict[str, Union[str, float]]]]]:
+    """
+    Recommend movies for a given user.
+
+    Args:
+        model (torch.nn.Module): The trained recommendation model.
+        user_id (int): The ID of the user for whom to recommend movies.
+        data_handler (Any): The data handler containing user and movie data.
+        excluded_train_items (List[int]): List of item indices to exclude from recommendations.
+
+    Returns:
+        Dict[str, Union[str, List[Dict[str, Union[str, float]]]]]: A dictionary containing recommendations or an error message.
+    """
 
     user_id_map = data_handler.user_id_map
     movie_id_map = data_handler.movie_id_map
@@ -45,7 +58,20 @@ def recommend_from_user(model, user_id, data_handler, excluded_train_items):
     
     return {'recommendations': recommendations}
 
-def recommend_from_movie(model, movie_id, data_handler, excluded_train_users):
+def recommend_from_movie(model: torch.nn.Module, movie_id: int, data_handler: Any, excluded_train_users: List[int]) -> Dict[str, Union[str, List[Dict[str, Union[int, float]]]]]:
+    """
+    Recommend users for a given movie.
+
+    Args:
+        model (torch.nn.Module): The trained recommendation model.
+        movie_id (int): The ID of the movie for which to recommend users.
+        data_handler (Any): The data handler containing user and movie data.
+        excluded_train_users (List[int]): List of user indices to exclude from recommendations.
+
+    Returns:
+        Dict[str, Union[str, List[Dict[str, Union[int, float]]]]]: A dictionary containing top users or an error message.
+    """
+    
     user_id_map = data_handler.user_id_map
     movie_id_map = data_handler.movie_id_map
 
