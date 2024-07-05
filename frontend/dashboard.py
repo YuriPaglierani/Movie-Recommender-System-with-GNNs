@@ -36,34 +36,51 @@ movie_titles = data_handler.movies['title'].tolist()
 
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
 
-app.layout = html.Div([
-    html.H1('Movie Recommender System'),
-    
-    dcc.RadioItems(
-        id='mode-selection',
-        options=[
-            {'label': 'User to Movie', 'value': 'user_to_movie'},
-            {'label': 'Movie to User', 'value': 'movie_to_user'}
-        ],
-        value='user_to_movie'
-    ),
-    
-    html.Div(id='input-container'),
-    
-    html.Button('Get Recommendations', id='recommend-button'),
-    html.Div(id='recommendations-output'),
-    
-    html.Div([
-        html.H2('Recommender System Visualizations'),
-        dcc.Dropdown(
-            id='visualization-type',
-            options=[
-                {'label': 'User-Item Interaction Graph', 'value': 'user-item-graph'},
-                {'label': 't-SNE Embedding Visualization', 'value': 'tsne-embedding'}
-            ],
-            value='user-item-graph'
-        ),
-        dcc.Graph(id='visualization-graph')
+app.layout = dbc.Container([
+    dbc.Row([
+        dbc.Col([
+            html.H1('Movie Recommender System', className='text-center mb-4'),
+            dbc.Card([
+                dbc.CardBody([
+                    dbc.RadioItems(
+                        id='mode-selection',
+                        options=[
+                            {'label': 'User to Movie', 'value': 'user_to_movie'},
+                            {'label': 'Movie to User', 'value': 'movie_to_user'}
+                        ],
+                        value='user_to_movie',
+                        inline=True,
+                        className='mb-3'
+                    ),
+                    html.Div(id='input-container', className='mb-3'),
+                    dbc.Button('Get Recommendations', id='recommend-button', color='primary', className='mb-3'),
+                    dcc.Loading(
+                        id="loading-recommendations",
+                        type="default",
+                        children=html.Div(id='recommendations-output')
+                    )
+                ])
+            ], className='mb-4'),
+            dbc.Card([
+                dbc.CardBody([
+                    html.H2('Recommender System Visualizations', className='mb-3'),
+                    dbc.Select(
+                        id='visualization-type',
+                        options=[
+                            {'label': 'User-Item Interaction Graph', 'value': 'user-item-graph'},
+                            {'label': 't-SNE Embedding Visualization', 'value': 'tsne-embedding'}
+                        ],
+                        value='user-item-graph',
+                        className='mb-3'
+                    ),
+                    dcc.Loading(
+                        id="loading-graph",
+                        type="default",
+                        children=dcc.Graph(id='visualization-graph')
+                    )
+                ])
+            ])
+        ], width=12)
     ]),
 
     # Modal for selecting a movie
@@ -84,7 +101,7 @@ app.layout = html.Div([
         id="modal",
         is_open=False,
     )
-])
+], fluid=True)
 
 @app.callback(
     Output('input-container', 'children'),
@@ -92,13 +109,13 @@ app.layout = html.Div([
 )
 def update_input(mode):
     if mode == 'user_to_movie':
-        return dcc.Input(id='id-input', type='number', placeholder='Enter User ID')
+        return dbc.Input(id='id-input', type='number', placeholder='Enter User ID')
     else:
         return html.Div([
-            html.Button('Select a Movie', id='open-modal-button'),
+            dbc.Button('Select a Movie', id='open-modal-button'),
             html.Div(id='selected-movie', style={'marginTop': '10px'})
         ])
-
+    
 @app.callback(
     Output('modal', 'is_open'),
     [Input('open-modal-button', 'n_clicks'), Input('select-movie-button', 'n_clicks')],
@@ -124,68 +141,80 @@ def update_selected_movie(n, value):
     Input('recommend-button', 'n_clicks'),
     State('mode-selection', 'value'),
     State('id-input', 'value'),
-    State('selected-movie', 'children')
+    State('selected-movie', 'children'),
+    prevent_initial_call=True
 )
+
 def update_recommendations(n_clicks, mode, id_value, selected_movie):
     if n_clicks is None:
-        return 'Enter an ID and click the button to get recommendations.'
-    
-    if mode == 'user_to_movie':
-        if int(id_value) not in user_ids:
-            return 'User ID not found in dataset.'
-        
-        excluded_train_items = train_data.edge_index[1, train_data.edge_index[0, :] == int(id_value)].tolist()
-        response = requests.post('http://localhost:5000/user_to_movie', json={'user_id': int(id_value), 'excluded_train_items': excluded_train_items})
-        if response.status_code == 200:
-            recommendations = response.json()['recommendations']
+        raise dash.exceptions.PreventUpdate
+
+    try:
+        if mode == 'user_to_movie':
+            if id_value is None:
+                return 'Please enter a User ID.'
+            
+            excluded_train_items = train_data.edge_index[1, train_data.edge_index[0, :] == int(id_value)].tolist()
+            response = requests.post('http://localhost:5000/user_to_movie', 
+                                     json={'user_id': int(id_value), 'excluded_train_items': excluded_train_items},
+                                     timeout=10)
+        else:  # movie_to_user
+            if not selected_movie or 'Selected Movie:' not in selected_movie:
+                return 'Please select a movie.'
+            
+            movie_title = selected_movie.replace('Selected Movie: ', '')
+            movie_id = data_handler.movies['movieId'][data_handler.movies['title'] == movie_title].values[0]
+            excluded_train_users = train_data.edge_index[0, train_data.edge_index[1, :] == data_handler.movie_id_map[movie_id]].tolist()
+            response = requests.post('http://localhost:5000/movie_to_user', 
+                                     json={'movie_id': movie_id, 'excluded_train_users': excluded_train_users},
+                                     timeout=10)
+
+        response.raise_for_status()  # Raises an HTTPError if the HTTP request returned an unsuccessful status code
+        data = response.json()
+
+        if mode == 'user_to_movie':
+            recommendations = data.get('recommendations', [])
             return html.Ul([html.Li(f"{movie['title']} (Score: {movie['score']:.2f})") for movie in recommendations])
         else:
-            return f'Error: Unable to get recommendations. Status code: {response.status_code}'
-    else:  # movie_to_user
-        if 'Selected Movie:' not in selected_movie:
-            return 'Select a movie to get recommendations.'
-        
-        movie_title = selected_movie.replace('Selected Movie: ', '')
-        if movie_title not in movie_titles:
-            return 'Movie title not found in dataset.'
-
-        movie_id = data_handler.movies['movieId'][data_handler.movies['title'] == movie_title].values[0]
-        excluded_train_users = train_data.edge_index[0, train_data.edge_index[1, :] == movies_id_map[movie_id]].tolist()
-        response = requests.post('http://localhost:5000/movie_to_user', json={'movie_id': movie_id, 'excluded_train_users': excluded_train_users})
-        if response.status_code == 200:
-            top_users = response.json()['top_users']
+            top_users = data.get('top_users', [])
             return html.Ul([html.Li(f"User ID: {user['user_id']} (Score: {user['score']:.2f})") for user in top_users])
-        else:
-            return f'Error: Unable to get top users. Status code: {response.status_code}'
+
+    except requests.exceptions.RequestException as e:
+        print(f"API request failed: {str(e)}")
+        return f'Error: Unable to get recommendations. Please check if the API server is running.'
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+        return f'An unexpected error occurred: {str(e)}'
 
 @app.callback(
     Output('visualization-graph', 'figure'),
     Input('visualization-type', 'value')
 )
-
 def update_visualization(visualization_type):
-    if visualization_type == 'user-item-graph':
+    try:
         response = requests.get('http://localhost:5000/get_embeddings')
-        if response.status_code == 200:
-            embeddings = response.json()
-            user_embedding = torch.tensor(embeddings['user_embedding'])
-            item_embedding = torch.tensor(embeddings['item_embedding'])
-            
+        response.raise_for_status()  # Raises an HTTPError for bad responses
+        embeddings = response.json()
+        
+        if 'error' in embeddings:
+            raise Exception(embeddings['error'])
+        
+        user_embedding = torch.tensor(embeddings['user_embedding'])
+        item_embedding = torch.tensor(embeddings['item_embedding'])
+        
+        if visualization_type == 'user-item-graph':
             G = create_user_item_graph(user_embedding, item_embedding)
             return plot_user_item_graph(G)
-        else:
-            return go.Figure()
-    
-    elif visualization_type == 'tsne-embedding':
-        response = requests.get('http://localhost:5000/get_embeddings')
-        if response.status_code == 200:
-            embeddings = response.json()
-            combined_embedding = torch.tensor(embeddings['user_embedding'] + embeddings['item_embedding'])
-            labels = ['User' if i < len(embeddings['user_embedding']) else 'Item' for i in range(len(combined_embedding))]
-            
+        elif visualization_type == 'tsne-embedding':
+            combined_embedding = torch.cat((user_embedding, item_embedding), dim=0)
+            labels = ['User' if i < len(user_embedding) else 'Item' for i in range(len(combined_embedding))]
             return plot_embedding_tsne(combined_embedding, labels)
-        else:
-            return go.Figure()
+    except requests.exceptions.RequestException as e:
+        print(f"API request failed: {str(e)}")
+        return go.Figure().add_annotation(text=f"Error: Unable to get embeddings. Please check if the API server is running.", showarrow=False)
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+        return go.Figure().add_annotation(text=f"An unexpected error occurred: {str(e)}", showarrow=False)
 
 if __name__ == '__main__':
     # Load model and data handler

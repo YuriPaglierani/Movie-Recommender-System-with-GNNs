@@ -49,12 +49,16 @@ def movie_to_user():
 
 @app.route('/get_embeddings', methods=['GET'])
 def get_embeddings():
-    with torch.no_grad():
-        user_embedding, item_embedding = model.get_final_embeddings()
-        return jsonify({
-            'user_embedding': user_embedding.tolist(),
-            'item_embedding': item_embedding.tolist()
-        })
+    try:
+        with torch.no_grad():
+            user_embedding, item_embedding = model.get_embeddings()
+            return jsonify({
+                'user_embedding': user_embedding.tolist(),
+                'item_embedding': item_embedding.tolist()
+            })
+    except Exception as e:
+        print(f"Error in get_embeddings: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
