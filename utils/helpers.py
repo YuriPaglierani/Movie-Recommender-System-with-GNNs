@@ -1,6 +1,13 @@
 import torch
 from typing import Tuple, Dict, List
 
+# for reproducibility
+torch.manual_seed(0)
+torch.cuda.manual_seed(0)
+torch.cuda.manual_seed_all(0)
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False 
+
 def cantor_hash_pair(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
     """
     Compute the Cantor pairing function for two tensors.

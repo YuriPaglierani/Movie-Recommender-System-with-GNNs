@@ -5,6 +5,13 @@ from models.light_gcn import LightGCN
 from data.dataset_handler import MovieLensDataHandler
 from utils.recommend import recommend_from_user
 
+# for reproducibility
+torch.manual_seed(0)
+torch.cuda.manual_seed(0)
+torch.cuda.manual_seed_all(0)
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False 
+
 app = Flask(__name__)
 
 # Load your trained model and data handler

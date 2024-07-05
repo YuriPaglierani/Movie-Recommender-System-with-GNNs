@@ -3,6 +3,13 @@ import networkx as nx
 import torch
 from sklearn.manifold import TSNE
 
+# for reproducibility
+torch.manual_seed(0)
+torch.cuda.manual_seed(0)
+torch.cuda.manual_seed_all(0)
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False 
+
 def create_user_item_graph(user_embedding, item_embedding, num_users=100, num_items=100):
     G = nx.Graph()
     

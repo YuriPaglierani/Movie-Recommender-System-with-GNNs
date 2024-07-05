@@ -3,6 +3,13 @@ import warnings
 import torch.nn as nn
 from torch_geometric.nn import LGConv
 
+# for reproducibility
+torch.manual_seed(0)
+torch.cuda.manual_seed(0)
+torch.cuda.manual_seed_all(0)
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False 
+
 class LightGCN(nn.Module):
     def __init__(self, num_users, num_items, num_layers=4, dim_h=64):
         super().__init__()
