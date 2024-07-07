@@ -28,11 +28,6 @@ This repository contains my project for the Exam of Information Retrieval @Unive
     conda install pytorch-cluster -c pyg
     ```
 
-3. Download and preprocess the data (optional):
-    ```bash
-    python data/download_and_preprocess.py
-    ```
-
 ## Usage 
 
 1. Train the model:
