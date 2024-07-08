@@ -154,27 +154,31 @@ class MovieLensDataHandler:
 
         indexes_path = "data/indexes"
 
-        # train_index_file = os.path.join(indexes_path, "train_indices.npy")
-        # val_index_file = os.path.join(indexes_path, "val_indices.npy")
-        # test_index_file = os.path.join(indexes_path, "test_indices.npy")
-        train_index_file = "train_indices.npy"
         val_index_file = "val_indices.npy"
         test_index_file = "test_indices.npy"
         
+        num_interactions = self.edge_index.shape[1]
+        all_indices = np.arange(num_interactions)
+
         if not os.path.exists(indexes_path):
             print("Splitting data...")
-            num_interactions = self.edge_index.shape[1]
-
-            all_indices = np.arange(num_interactions)
+            
             
             train_indices, val_test_indices = train_test_split(all_indices, train_size=train_size, shuffle=True)
             val_indices, test_indices = train_test_split(val_test_indices, test_size=0.5, shuffle=True)
+
+            # sort the indices
+            train_indices.sort()
+            val_indices.sort()
+            test_indices.sort()
+
             print("Saving indices...")
-            self._save_indices(train_indices, val_indices, test_indices, indexes_path, train_index_file, val_index_file, test_index_file)
+            print(train_indices)
+            self._save_indices(val_indices, test_indices, indexes_path, val_index_file, test_index_file)
 
         else:
             print("Loading preprocessed data...")
-            train_indices, val_indices, test_indices = self._load_from_indices(indexes_path, train_index_file, val_index_file, test_index_file) 
+            train_indices, val_indices, test_indices = self._load_from_indices(indexes_path, num_interactions, val_index_file, test_index_file) 
 
         train_edges = self.edge_index[:, train_indices].contiguous()
         val_edges = self.edge_index[:, val_indices].contiguous()
@@ -194,60 +198,62 @@ class MovieLensDataHandler:
     
         return train_dataset, val_dataset, test_dataset
 
-    def _load_from_indices(self, indexes_path: str, train_index_file: str, val_index_file: str, test_index_file: str) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _load_from_indices(self, indexes_path: str, num_interactions: int, val_index_file: str, test_index_file: str) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
-        Loads the train, validation, and test indices from files and creates the datasets.
+        Loads the validation, and test indices from files and infers what are the training indices from num_interactions.
         
         Args:
-            train_index_file (str): Path to load the training indices from.
             val_index_file (str): Path to load the validation indices from.
             test_index_file (str): Path to load the test indices from.
         
         Returns:
-            Tuple: (train_dataset, val_dataset, test_dataset) as PyG Data objects.
+            Tuple: (train_indices, val_indices, test_indices) as np.ndarray objects.
         """
 
         if not os.path.exists(indexes_path):
             raise FileNotFoundError("Indexes path not found. Please preprocess the data first.")
         
-        train_idx = os.path.join(indexes_path, train_index_file)
         val_idx = os.path.join(indexes_path, val_index_file)
         test_idx = os.path.join(indexes_path, test_index_file)
+        
+        val_indices = np.sort(np.load(val_idx))
+        test_indices = np.sort(np.load(test_idx))
 
-        train_indices = np.load(train_idx)
-        val_indices = np.load(val_idx)
-        test_indices = np.load(test_idx)
+        all_indices = np.arange(num_interactions)
+        val_test_indices = np.concatenate((val_indices, test_indices))
+        train_indices = np.setdiff1d(all_indices, val_test_indices)
+
+        # check that all the indices are sorted
+        assert np.all(np.diff(train_indices) > 0)
+        assert np.all(np.diff(val_indices) > 0)
+        assert np.all(np.diff(test_indices) > 0)
 
         return train_indices, val_indices, test_indices
     
-    def _save_indices(self, train_indices: np.ndarray, val_indices: np.ndarray, test_indices: np.ndarray, 
-                     indexes_path: str, train_index_file: str, val_index_file: str, test_index_file: str) -> None:
+    def _save_indices(self, val_indices: np.ndarray, test_indices: np.ndarray, 
+                     indexes_path: str, val_index_file: str, test_index_file: str) -> None:
         """
-        Saves the train, validation, and test indices to files.
+        Saves the validation, and test indices to files.
         
         Args:
-            train_indices (np.ndarray): Indices for the training set.
             val_indices (np.ndarray): Indices for the validation set.
             test_indices (np.ndarray): Indices for the test set.
-            train_index_file (str): Path to save the training indices.
             val_index_file (str): Path to save the validation indices.
             test_index_file (str): Path to save the test indices.
         """
         if not os.path.exists(indexes_path):
             os.makedirs(indexes_path)
 
-        train_idx = os.path.join(indexes_path, train_index_file)
         val_idx = os.path.join(indexes_path, val_index_file)
         test_idx = os.path.join(indexes_path, test_index_file)
 
-        np.save(train_idx, train_indices)
         np.save(val_idx, val_indices)
         np.save(test_idx, test_indices)
 
     # @profile
     def get_data_training(self, num_train_clusters: int = 100) -> Tuple[DataLoader, Data, Data]:
         """
-        Creates ClusterLoader for train set, and return Data for validation, and test sets.
+        Creates Dataloader for train set, and return Data for validation, and test sets.
         
         This method uses ClusterData and DataLoader for efficient
         handling of large graphs.
@@ -256,7 +262,7 @@ class MovieLensDataHandler:
             num_train_clusters (int): Number of clusters for training data.
         
         Returns:
-            tuple: (train_loader, val_dataset, test_dataset)
+            Tuple: (train_loader, val_dataset, test_dataset)
         """
 
         print("Creating dataloaders...")
