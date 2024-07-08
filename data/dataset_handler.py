@@ -9,6 +9,8 @@ from torch_geometric.loader import ClusterData, DataLoader
 from torch_geometric.utils import to_undirected
 from sklearn.model_selection import train_test_split
 from typing import Tuple, Dict
+
+# if you want to track the memory management you can uncomment the lines with @profile
 from memory_profiler import profile
 
 MOVIELENS_25M_URL = "https://files.grouplens.org/datasets/movielens/ml-25m.zip"
@@ -35,7 +37,6 @@ def download_and_extract_dataset() -> None:
         
     zip_path = os.path.join(DATA_DIR, "ml-25m.zip")
     
-    # Download the dataset
     print("Downloading MovieLens 25M dataset...")
     response = requests.get(MOVIELENS_25M_URL)
     with open(zip_path, 'wb') as f:
@@ -44,7 +45,10 @@ def download_and_extract_dataset() -> None:
     # Extract only the required files
     print("Extracting dataset...")
     with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+
+        # for this project, we only need the 'movies.csv' and 'ratings.csv' files
         for file in ["ml-25m/movies.csv", "ml-25m/ratings.csv"]:
+
             zip_ref.extract(file, DATA_DIR)
             extracted_file_path = os.path.join(DATA_DIR, file)
             new_file_path = os.path.join(DATA_DIR, os.path.basename(file))
@@ -53,6 +57,7 @@ def download_and_extract_dataset() -> None:
     # Remove the zip file and the intermediate folder
     os.remove(zip_path)
     intermediate_folder = os.path.join(DATA_DIR, "ml-25m")
+
     if os.path.exists(intermediate_folder):
         os.rmdir(intermediate_folder)
     
@@ -78,7 +83,6 @@ class MovieLensDataHandler:
         self.ratings_path: str = ratings_path
         self.movies_path: str = movies_path
         self.device: torch.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        
         self.ratings: pd.DataFrame
         self.movies: pd.DataFrame
         self.num_users: int
@@ -97,7 +101,7 @@ class MovieLensDataHandler:
         self.movies_path = movies_path
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         
-        # Load only necessary columns and filter ratings
+        # Load only necessary columns and filter ratings, we only consider ratings >= 4
         self.ratings = pd.read_csv(ratings_path, usecols=['userId', 'movieId', 'rating'])
         self.ratings = self.ratings[self.ratings['rating'] >= 4]
         
@@ -112,10 +116,10 @@ class MovieLensDataHandler:
         self.id_user_map = {i: id for id, i in self.user_id_map.items()}
         self.movie_id_map = {id: i+self.num_users for i, id in enumerate(self.ratings['movieId'].unique())}
         self.id_movie_map = {i+self.num_users: id for id, i in self.movie_id_map.items()}
-        self.preprocess()
+        self._preprocess()
 
     # @profile
-    def preprocess(self) -> None:
+    def _preprocess(self) -> None:
         """
         Preprocesses the loaded data.
         
@@ -145,16 +149,19 @@ class MovieLensDataHandler:
             train_size (float): Proportion of data to use for training.
         
         Returns:
-            tuple: (train_dataset, val_dataset, test_dataset) as PyG Data objects.
+            Tuple: (train_dataset, val_dataset, test_dataset) as PyG Data objects.
         """
 
-        processed_data_path = "data/processed"
-        zip_file_path = os.path.join(processed_data_path, "splitted_datasets.zip")
+        indexes_path = "data/indexes"
 
-        if not os.path.exists(processed_data_path):
-            os.makedirs(processed_data_path)
-
-        if not os.path.exists(zip_file_path):
+        # train_index_file = os.path.join(indexes_path, "train_indices.npy")
+        # val_index_file = os.path.join(indexes_path, "val_indices.npy")
+        # test_index_file = os.path.join(indexes_path, "test_indices.npy")
+        train_index_file = "train_indices.npy"
+        val_index_file = "val_indices.npy"
+        test_index_file = "test_indices.npy"
+        
+        if not os.path.exists(indexes_path):
             print("Splitting data...")
             num_interactions = self.edge_index.shape[1]
 
@@ -162,94 +169,80 @@ class MovieLensDataHandler:
             
             train_indices, val_test_indices = train_test_split(all_indices, train_size=train_size, shuffle=True)
             val_indices, test_indices = train_test_split(val_test_indices, test_size=0.5, shuffle=True)
-            
-            train_edges = self.edge_index[:, train_indices].contiguous()
-            val_edges = self.edge_index[:, val_indices].contiguous()
-            test_edges = self.edge_index[:, test_indices].contiguous()
+            print("Saving indices...")
+            self._save_indices(train_indices, val_indices, test_indices, indexes_path, train_index_file, val_index_file, test_index_file)
 
-            train_dataset = Data(edge_index=train_edges, 
-                                num_nodes=self.num_users + self.num_movies).to(self.device)
-            train_dataset.n_id = torch.arange(self.num_users + self.num_movies, device=self.device)
-        
-            val_dataset = Data(edge_index=val_edges, 
-                                num_nodes=self.num_users + self.num_movies).to(self.device)
-            val_dataset.n_id = torch.arange(self.num_users + self.num_movies, device=self.device)
-
-            test_dataset = Data(edge_index=test_edges, 
-                                num_nodes=self.num_users + self.num_movies).to(self.device)
-            test_dataset.n_id = torch.arange(self.num_users + self.num_movies, device=self.device)
-
-            print("Saving preprocessed data...")
-            self.save_data(train_dataset, val_dataset, test_dataset, processed_data_path)
         else:
             print("Loading preprocessed data...")
-            train_dataset, val_dataset, test_dataset = self.load_data(zip_file_path, processed_data_path)
+            train_indices, val_indices, test_indices = self._load_from_indices(indexes_path, train_index_file, val_index_file, test_index_file) 
+
+        train_edges = self.edge_index[:, train_indices].contiguous()
+        val_edges = self.edge_index[:, val_indices].contiguous()
+        test_edges = self.edge_index[:, test_indices].contiguous()
+
+        train_dataset = Data(edge_index=train_edges, 
+                            num_nodes=self.num_users + self.num_movies).to(self.device)
+        train_dataset.n_id = torch.arange(self.num_users + self.num_movies, device=self.device)
+    
+        val_dataset = Data(edge_index=val_edges, 
+                            num_nodes=self.num_users + self.num_movies).to(self.device)
+        val_dataset.n_id = torch.arange(self.num_users + self.num_movies, device=self.device)
+
+        test_dataset = Data(edge_index=test_edges, 
+                            num_nodes=self.num_users + self.num_movies).to(self.device)
+        test_dataset.n_id = torch.arange(self.num_users + self.num_movies, device=self.device)
     
         return train_dataset, val_dataset, test_dataset
 
-    def load_data(self, zip_path: str, extract_path: str) -> Tuple[Data, Data, Data]:
+    def _load_from_indices(self, indexes_path: str, train_index_file: str, val_index_file: str, test_index_file: str) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
-        Loads the train, validation, and test datasets from a .zip file.
+        Loads the train, validation, and test indices from files and creates the datasets.
         
         Args:
-            zip_path (str): Path to the .zip file containing the datasets.
-            extract_path (str): Path to extract the datasets.
-            device (torch.device): The device to map the loaded datasets to.
+            train_index_file (str): Path to load the training indices from.
+            val_index_file (str): Path to load the validation indices from.
+            test_index_file (str): Path to load the test indices from.
         
         Returns:
-            train_dataset, val_dataset, test_dataset: Loaded datasets.
+            Tuple: (train_dataset, val_dataset, test_dataset) as PyG Data objects.
         """
 
-        # Extract the zip file
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            zip_ref.extractall(extract_path)
+        if not os.path.exists(indexes_path):
+            raise FileNotFoundError("Indexes path not found. Please preprocess the data first.")
+        
+        train_idx = os.path.join(indexes_path, train_index_file)
+        val_idx = os.path.join(indexes_path, val_index_file)
+        test_idx = os.path.join(indexes_path, test_index_file)
 
-        # Load the datasets
-        train_dataset = torch.load(os.path.join(extract_path, "train.pt"), map_location=self.device)
-        val_dataset = torch.load(os.path.join(extract_path, "val.pt"), map_location=self.device)
-        test_dataset = torch.load(os.path.join(extract_path, "test.pt"), map_location=self.device)
-    
-        os.remove(os.path.join(extract_path, "train.pt"))
-        os.remove(os.path.join(extract_path, "val.pt"))
-        os.remove(os.path.join(extract_path, "test.pt"))
+        train_indices = np.load(train_idx)
+        val_indices = np.load(val_idx)
+        test_indices = np.load(test_idx)
 
-        return train_dataset, val_dataset, test_dataset
+        return train_indices, val_indices, test_indices
     
-    def save_data(self, train_dataset: Data, val_dataset: Data, test_dataset: Data, path: str) -> None:
+    def _save_indices(self, train_indices: np.ndarray, val_indices: np.ndarray, test_indices: np.ndarray, 
+                     indexes_path: str, train_index_file: str, val_index_file: str, test_index_file: str) -> None:
         """
-        Saves the train, validation, and test datasets to the given path.
+        Saves the train, validation, and test indices to files.
         
         Args:
-            train_dataset (Data): Training dataset.
-            val_dataset (Data): Validation dataset.
-            test_dataset (Data): Test dataset.
-            path (str): Path to save the datasets.
+            train_indices (np.ndarray): Indices for the training set.
+            val_indices (np.ndarray): Indices for the validation set.
+            test_indices (np.ndarray): Indices for the test set.
+            train_index_file (str): Path to save the training indices.
+            val_index_file (str): Path to save the validation indices.
+            test_index_file (str): Path to save the test indices.
         """
+        if not os.path.exists(indexes_path):
+            os.makedirs(indexes_path)
 
-        if not os.path.exists(path):
-            os.makedirs(path)
-        
-        # Paths to save the datasets
-        train_path = os.path.join(path, "train.pt")
-        val_path = os.path.join(path, "val.pt")
-        test_path = os.path.join(path, "test.pt")
+        train_idx = os.path.join(indexes_path, train_index_file)
+        val_idx = os.path.join(indexes_path, val_index_file)
+        test_idx = os.path.join(indexes_path, test_index_file)
 
-        # Save the datasets
-        torch.save(train_dataset, train_path)
-        torch.save(val_dataset, val_path)
-        torch.save(test_dataset, test_path)
-
-        # Compress the files into a .zip archive
-        zip_path = os.path.join(path, "splitted_datasets.zip")
-        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-            zipf.write(train_path, os.path.basename(train_path))
-            zipf.write(val_path, os.path.basename(val_path))
-            zipf.write(test_path, os.path.basename(test_path))
-
-
-        os.remove(train_path)
-        os.remove(val_path)
-        os.remove(test_path)
+        np.save(train_idx, train_indices)
+        np.save(val_idx, val_indices)
+        np.save(test_idx, test_indices)
 
     # @profile
     def get_data_training(self, num_train_clusters: int = 100) -> Tuple[DataLoader, Data, Data]:
