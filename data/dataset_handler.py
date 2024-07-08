@@ -203,6 +203,8 @@ class MovieLensDataHandler:
         Loads the validation, and test indices from files and infers what are the training indices from num_interactions.
         
         Args:
+            indexes_path (str): Path to load the indices from.
+            num_interactions (int): Number of interactions in the dataset.
             val_index_file (str): Path to load the validation indices from.
             test_index_file (str): Path to load the test indices from.
         

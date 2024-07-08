@@ -1,5 +1,6 @@
 import torch
 import torch.optim as optim
+import numpy as np
 # Unfortunately, for the current version of torch geometric we cannot use the structured_negative_sampling function for Bipartite Graphs:(
 # from torch_geometric.utils import structured_negative_sampling
 from tqdm import tqdm
@@ -133,10 +134,61 @@ def evaluate(model: torch.nn.Module, test_data: torch.Tensor, device: torch.devi
 
         embs = compute_embeddings(model, test_data, device)
         test_loss = bpr_loss(*embs).item()
-
+        user_embs = embs[0]
+        item_pos_embs = embs[2]
+        item_neg_embs = embs[4]
+        embs = (user_embs, item_pos_embs, item_neg_embs)
+        recall_at_20 = compute_recall_at_k(embs, k=20)
+        print(f"recall at 20: {recall_at_20:.5f}")
     return test_loss
 
-    
+
+
+def compute_recall_at_k(embs, k: int = 20, num_samples: int = 10, sample_size: int = 100) -> float:
+    """
+    Compute Recall@k given embeddings by sampling users in batches.
+
+    Args:
+        embs (tuple): A tuple containing user embeddings and item embeddings.
+        k (int): The number of top items to consider for recall calculation.
+        num_samples (int): The number of user samples to draw.
+        sample_size (int): The number of users to sample in each draw.
+
+    Returns:
+        float: Recall@k
+    """
+    user_embs, pos_item_embs, neg_item_embs = embs
+
+    num_users = user_embs.size(0)
+    total_recall = 0.0
+
+    for _ in range(num_samples):
+        sampled_indices = np.random.choice(num_users, sample_size, replace=False)
+        user_embs_sampled = user_embs[sampled_indices]
+
+        user_item_scores_sampled = torch.mm(user_embs_sampled, torch.cat((pos_item_embs, neg_item_embs)).t())
+
+        pos_mask_sampled = torch.zeros_like(user_item_scores_sampled)
+        pos_mask_sampled[:, :pos_item_embs.size(0)] = 1  # Assume positive items are in the first columns
+
+        # Get top-k scores and their indices for the sampled users
+        _, top_k_indices_sampled = torch.topk(user_item_scores_sampled, k, dim=1)
+
+        # Extract the relevant labels for the sampled users
+        top_k_labels_sampled = torch.gather(pos_mask_sampled, 1, top_k_indices_sampled)
+
+        # Compute recall for the sampled users
+        num_relevant_items_sampled = pos_item_embs.size(0)
+        num_relevant_retrieved_sampled = top_k_labels_sampled.sum(dim=1)
+
+        recall_sampled = num_relevant_retrieved_sampled / num_relevant_items_sampled
+        total_recall += recall_sampled.mean().item()
+
+    # Compute the mean recall over all samples
+    recall_at_k = total_recall / num_samples
+
+    return recall_at_k
+
 def train_model(model: torch.nn.Module, train_loader: torch.utils.data.DataLoader, 
                 val_data: torch.Tensor, test_data: torch.Tensor, device: torch.device, 
                 epochs: int = 1, lr: float = 0.001) -> torch.nn.Module:
