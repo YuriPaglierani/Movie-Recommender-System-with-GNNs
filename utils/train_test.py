@@ -17,7 +17,7 @@ torch.backends.cudnn.benchmark = False
 def bpr_loss(emb_users_final: torch.Tensor, emb_users: torch.Tensor, 
              emb_pos_items_final: torch.Tensor, emb_pos_items: torch.Tensor, 
              emb_neg_items_final: torch.Tensor, emb_neg_items: torch.Tensor, 
-             bpr_coeff: float = 1e-6) -> torch.Tensor:
+             bpr_coeff: float = 5e-3) -> torch.Tensor:
     """
     Compute the Bayesian Personalized Ranking (BPR) loss.
 
@@ -34,17 +34,34 @@ def bpr_loss(emb_users_final: torch.Tensor, emb_users: torch.Tensor,
         torch.Tensor: Computed BPR loss.
     """
 
-    reg_loss = bpr_coeff * (emb_users.norm().pow(2) +
-                        emb_pos_items.norm().pow(2) +
-                        emb_neg_items.norm().pow(2))
+    reg_loss = bpr_coeff * (emb_users * emb_users +
+                        emb_pos_items * emb_pos_items +
+                        emb_neg_items * emb_neg_items).mean()
 
-    pos_ratings = torch.mul(emb_users_final, emb_pos_items_final).sum(dim=-1)
-    neg_ratings = torch.mul(emb_users_final, emb_neg_items_final).sum(dim=-1)
+    normalized_users = normalize_embedding(emb_users_final)
+    normalized_pos_items = normalize_embedding(emb_pos_items_final)
+    normalized_neg_items = normalize_embedding(emb_neg_items_final)
 
-    bpr_loss = torch.mean(torch.nn.functional.softplus(pos_ratings - neg_ratings))
-    
+    cosine_similarity_pos = torch.sum(normalized_users * normalized_pos_items, dim=1)
+    cosine_similarity_neg = torch.sum(normalized_users * normalized_neg_items, dim=1)
+
+    bpr_loss = torch.mean(torch.nn.functional.softplus(10*(cosine_similarity_pos - cosine_similarity_neg)))/10.
+
     return -bpr_loss + reg_loss
 
+def normalize_embedding(emb: torch.Tensor):
+    """
+    Normalize the embedding.
+
+    Args:
+        emb (torch.Tensor): Input embedding.
+
+    Returns:
+        torch.Tensor: Normalized embedding.
+    """
+
+    return emb / torch.norm(emb, p=2, dim=1, keepdim=True)
+    
 def train(model: torch.nn.Module, optimizer: torch.optim.Optimizer, 
           train_loader: torch.utils.data.DataLoader, device: torch.device
           ) -> float:
@@ -74,6 +91,7 @@ def train(model: torch.nn.Module, optimizer: torch.optim.Optimizer,
         train_loss = bpr_loss(*embs)
 
         train_loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1)
         optimizer.step()
 
         w = batch.edge_index.shape[1]
@@ -114,7 +132,7 @@ def compute_embeddings(model: torch.nn.Module,
 
     return final_user_emb, initial_user_emb, final_pos_item_emb, initial_pos_item_emb, final_neg_item_emb, initial_neg_item_emb
 
-def evaluate(model: torch.nn.Module, test_data: torch.Tensor, device: torch.device) -> float:
+def evaluate(model: torch.nn.Module, test_data: torch.Tensor, device: torch.device, top_k: int=100) -> float:
     """
     Evaluate the model on a test set.
 
@@ -122,6 +140,7 @@ def evaluate(model: torch.nn.Module, test_data: torch.Tensor, device: torch.devi
         model (torch.nn.Module): The model used.
         test_data (torch.Tensor): Tensor containing the test data.
         device (torch.device): Device to use for computation.
+        top_k (int): integer for the topk recall metric
 
     Returns:
         float: Training loss
@@ -134,15 +153,13 @@ def evaluate(model: torch.nn.Module, test_data: torch.Tensor, device: torch.devi
 
         embs = compute_embeddings(model, test_data, device)
         test_loss = bpr_loss(*embs).item()
-        user_embs = embs[0]
-        item_pos_embs = embs[2]
-        item_neg_embs = embs[4]
+        user_embs = embs[1]
+        item_pos_embs = embs[3]
+        item_neg_embs = embs[5]
         embs = (user_embs, item_pos_embs, item_neg_embs)
-        recall_at_20 = compute_recall_at_k(embs, k=20)
-        print(f"recall at 20: {recall_at_20:.5f}")
-    return test_loss
+        recall_at_k = compute_recall_at_k(embs, k=top_k)
 
-
+    return test_loss, recall_at_k
 
 def compute_recall_at_k(embs, k: int = 20, num_samples: int = 10, sample_size: int = 100) -> float:
     """
@@ -159,17 +176,21 @@ def compute_recall_at_k(embs, k: int = 20, num_samples: int = 10, sample_size: i
     """
     user_embs, pos_item_embs, neg_item_embs = embs
 
+    pos_item_embs_norm = normalize_embedding(pos_item_embs)
+    neg_item_embs_norm = normalize_embedding(neg_item_embs)
+
     num_users = user_embs.size(0)
     total_recall = 0.0
 
     for _ in range(num_samples):
         sampled_indices = np.random.choice(num_users, sample_size, replace=False)
         user_embs_sampled = user_embs[sampled_indices]
+        user_normalized = normalize_embedding(user_embs_sampled)
 
-        user_item_scores_sampled = torch.mm(user_embs_sampled, torch.cat((pos_item_embs, neg_item_embs)).t())
+        user_item_scores_sampled = torch.mm(user_normalized, torch.cat((pos_item_embs_norm, neg_item_embs_norm)).t())
 
         pos_mask_sampled = torch.zeros_like(user_item_scores_sampled)
-        pos_mask_sampled[:, :pos_item_embs.size(0)] = 1  # Assume positive items are in the first columns
+        pos_mask_sampled[:, :pos_item_embs.size(0)] = 1 
 
         # Get top-k scores and their indices for the sampled users
         _, top_k_indices_sampled = torch.topk(user_item_scores_sampled, k, dim=1)
@@ -207,20 +228,31 @@ def train_model(model: torch.nn.Module, train_loader: torch.utils.data.DataLoade
     Returns:
         torch.nn.Module: Trained model.
     """
+    hist_train_loss = []
+    hist_val_loss = []
+    hist_val_recall = []
 
     optimizer = optim.Adam(model.parameters(), lr=lr)
+    best_recall = 0
 
     for epoch in tqdm(range(epochs)):
         loss = train(model, optimizer, train_loader, device)
-        val_loss = evaluate(model, val_data, device)
-        print(f'Epoch: {epoch:03d}, Train Loss: {loss:.4f}, \
-              Val Loss: {val_loss:.4f}')
-        
-    torch.save(model.state_dict(), 'best_model.pth')
-    test_loss = evaluate(model, test_data, device)
-    print(f'Test Loss: {test_loss:.4f}')
+        val_loss, recall_at_k = evaluate(model, val_data, device)
 
-    return model
+        hist_train_loss.append(loss)
+        hist_val_loss.append(val_loss)
+        hist_val_recall.append(recall_at_k)
+
+        print(f'Epoch: {epoch:03d}, Train Loss: {loss:.4f}, \
+              Val Loss: {val_loss:.4f}, Recall@k: {recall_at_k:.6f}, k=100')
+        if recall_at_k > best_recall:
+            best_recall = recall_at_k
+            torch.save(model.state_dict(), 'best_model.pth')
+
+    test_loss, recall_at_k = evaluate(model, test_data, device)
+    print(f'Test Loss: {test_loss:.4f}, Recall@k: {recall_at_k:.6f}, k=100')
+
+    return model, hist_train_loss, hist_val_loss, hist_val_recall
 
 # Usage example
 if __name__ == "__main__":
@@ -245,4 +277,26 @@ if __name__ == "__main__":
     if os.path.exists('best_model.pth'):
         model.load_state_dict(torch.load('best_model.pth', map_location=device))
     
-    trained_model = train_model(model, train_loader, val_data, test_data, device, epochs=3)
+    trained_model, hist_train_loss, hist_val_loss, hist_val_recall = train_model(model, train_loader, val_data, test_data, device, epochs=3)
+
+    np.save('data/hist_train_loss.npy', hist_train_loss)
+    np.save('data/hist_val_loss.npy', hist_val_loss)
+    np.save('data/hist_val_recall.npy', hist_val_recall)
+
+    import plotly.graph_objects as go
+
+    hist_train_loss = np.load('data/hist_train_loss.npy')   
+    hist_val_loss = np.load('data/hist_val_loss.npy')
+    hist_val_recall = np.load('data/hist_val_recall.npy')
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=np.arange(len(hist_train_loss)), y=hist_train_loss, mode='lines', name='Train Loss'))
+    fig.add_trace(go.Scatter(x=np.arange(len(hist_val_loss)), y=hist_val_loss, mode='lines', name='Validation Loss'))
+    fig.update_layout(title='Training and Validation Loss', xaxis_title='Epoch', yaxis_title='Loss')
+    fig.show()
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=np.arange(len(hist_val_recall)), y=hist_val_recall, mode='lines', name='Recall@k'))
+    fig.update_layout(title='Recall@k', xaxis_title='Epoch', yaxis_title='Recall@k')
+    fig.add_annotation(x=len(hist_val_recall)-1, y=hist_val_recall[-1], text="Best Model", showarrow=True, arrowhead=1)
+    fig.show()
