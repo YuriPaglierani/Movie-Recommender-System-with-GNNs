@@ -24,3 +24,4 @@ dependencies:
     - torch-geometric==2.4.0
     - tqdm
     - dash-bootstrap-components
+    - umap-learn

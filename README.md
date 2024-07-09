@@ -30,13 +30,17 @@ This repository contains my project for the Exam of Information Retrieval @Unive
 
 ## Usage 
 
-1. Train the model:
+1. Train the model (optional, you need at least 1 GPU):
     ```bash
     python utils/train_test.py
     ```
-2. Run the app:
+2. Run the app (still in developement):
     ```bash
     python main.py
+    ```
+3. Make recommendations from terminal:
+    ```bash
+    python utils/recommend.py
     ```
 
 Choose an option:

@@ -1,7 +1,6 @@
 from typing import List, Dict, Any, Union, Optional
 import torch
-import plotly.graph_objects as go
-from visualizations import plot_recommendations
+from visualizations import plot_recommendations, analyze_user_recommendations
 
 # for reproducibility
 torch.manual_seed(0)
@@ -37,19 +36,17 @@ def recommend_from_user(model: torch.nn.Module, user_id: int, data_handler: Any,
         user_embedding, item_embedding = model.get_embeddings(user_indices=torch.tensor([user_index]), 
                                                                       item_indices=torch.arange(len(movie_id_map)))
     
-        # Normalize user embedding
         user_embedding = user_embedding / torch.norm(user_embedding, dim=1, keepdim=True)
         item_embedding = item_embedding / torch.norm(item_embedding, dim=1, keepdim=True)
         
         scores = torch.matmul(user_embedding, item_embedding.t()).squeeze()
         
-        # Get all movie indices sorted by score
         _, sorted_indices = torch.sort(scores, descending=True)
         
         recommendations = []
 
         for idx in sorted_indices:
-            if excluded_train_items and idx.item() in excluded_train_items:
+            if (not excluded_train_items is None) and idx.item() in excluded_train_items:
                 continue
 
             movie_id = list(movie_id_map.keys())[list(movie_id_map.values()).index(idx.item()+len(user_id_map))]
@@ -65,7 +62,7 @@ def recommend_from_user(model: torch.nn.Module, user_id: int, data_handler: Any,
     
     return {'recommendations': recommendations}
 
-def recommend_from_movie(model: torch.nn.Module, movie_id: int, data_handler: Any, excluded_train_users: List[int]) -> Dict[str, Union[str, List[Dict[str, Union[int, float]]]]]:
+def recommend_from_movie(model: torch.nn.Module, movie_id: int, data_handler: Any, excluded_train_users: Optional[List[int]] = None) -> Dict[str, Union[str, List[Dict[str, Union[int, float]]]]]:
     """
     Recommend users for a given movie.
 
@@ -73,7 +70,7 @@ def recommend_from_movie(model: torch.nn.Module, movie_id: int, data_handler: An
         model (torch.nn.Module): The trained recommendation model.
         movie_id (int): The ID of the movie for which to recommend users.
         data_handler (Any): The data handler containing user and movie data.
-        excluded_train_users (List[int]): List of user indices to exclude from recommendations.
+        excluded_train_users (Optional[List[int]]): List of user indices to exclude from recommendations. Optional.
 
     Returns:
         Dict[str, Union[str, List[Dict[str, Union[int, float]]]]]: A dictionary containing top users or an error message.
@@ -82,23 +79,27 @@ def recommend_from_movie(model: torch.nn.Module, movie_id: int, data_handler: An
     user_id_map = data_handler.user_id_map
     movie_id_map = data_handler.movie_id_map
 
-    movie_index = movie_id_map.get(movie_id) - len(user_id_map)
+    movie_index = movie_id_map.get(movie_id)
     
     if movie_index is None:
         return {'error': 'Invalid movie ID'}
     
+    movie_index -= len(user_id_map)  # Adjust index
+    
     with torch.no_grad():
         user_embedding, item_embedding = model.get_embeddings(user_indices=torch.arange(len(user_id_map)), 
-                                                                      item_indices=torch.tensor([movie_index]))
+                                                              item_indices=torch.tensor([movie_index]))
     
+        user_embedding = user_embedding / torch.norm(user_embedding, dim=1, keepdim=True)
+        item_embedding = item_embedding / torch.norm(item_embedding, dim=1, keepdim=True)
+        
         scores = torch.matmul(user_embedding, item_embedding.t()).squeeze()
         
-        # Get all user indices sorted by score
         _, sorted_indices = torch.sort(scores, descending=True)
         
         top_users = []
         for idx in sorted_indices:
-            if idx.item() in excluded_train_users:
+            if (excluded_train_users is not None) and idx.item() in excluded_train_users:
                 continue
             user_id = list(user_id_map.keys())[list(user_id_map.values()).index(idx.item())]
             top_users.append({
@@ -145,8 +146,11 @@ if __name__ == '__main__':
     if 'error' in recommendations:
         print(recommendations['error'])
     else:
-        print("Top 10 Recommendations:")
+        print(f"Top 10 Recommendations for user {user_id}:")
         for i, rec in enumerate(recommendations['recommendations'], 1):
             print(f"{i}. {rec['title']} (Score: {rec['score']:.4f})")
         
-        plot_recommendations(recommendations['recommendations'])
+        plot_recommendations(recommendations['recommendations'], user_id)
+
+    analysis_plot = analyze_user_recommendations(model, user_id, data_handler)
+    analysis_plot.show()

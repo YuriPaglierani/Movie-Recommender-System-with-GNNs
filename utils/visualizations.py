@@ -1,11 +1,15 @@
-from typing import Dict, List, Union
+from typing import Dict, List, Union, Any
 import plotly.graph_objs as go
 import networkx as nx
 import numpy as np
+import plotly.express as px
 import torch
 from sklearn.manifold import TSNE
 import numpy as np
 from plotly.subplots import make_subplots
+import pandas as pd
+from umap import UMAP
+
 
 # for reproducibility
 torch.manual_seed(0)
@@ -86,31 +90,167 @@ def plot_user_item_graph(G):
     
     return fig
 
-def plot_embedding_tsne(embedding, labels):
-    tsne = TSNE(n_components=2, random_state=42)
-    embedding_2d = tsne.fit_transform(embedding.detach().cpu().numpy())
+def analyze_user_recommendations(model: torch.nn.Module, user_id: int, data_handler: Any, n_neighbors: int = 15, min_dist: float = 0.1) -> px.scatter:
+    """
+    Analyze and visualize user recommendations using UMAP.
+
+    This function generates a UMAP plot that visualizes the relationships between
+    the main user, similar users, dissimilar users, and recommended movies in a
+    2D embedding space.
+
+    Args:
+        model (torch.nn.Module): The trained recommendation model.
+        user_id (int): The ID of the main user to analyze.
+        data_handler (Any): The data handler object containing user and movie information.
+        n_neighbors (int): The number of neighbors to consider in UMAP. Default is 15.
+        min_dist (float): The minimum distance between points in UMAP. Default is 0.1.
+
+    Returns:
+        px.scatter: A Plotly Express scatter plot figure.
+    """
+    user_id_map = data_handler.user_id_map
+    movie_id_map = data_handler.movie_id_map
+    movies = data_handler.movies
+    user_index = user_id_map[user_id]
+
+    with torch.no_grad():
+        all_user_embeddings, all_item_embeddings = model.get_embeddings(
+            user_indices=torch.arange(len(user_id_map)),
+            item_indices=torch.arange(len(movie_id_map))
+        )
+
+        all_user_embeddings = all_user_embeddings / torch.norm(all_user_embeddings, dim=1, keepdim=True)
+        all_item_embeddings = all_item_embeddings / torch.norm(all_item_embeddings, dim=1, keepdim=True)
+
+        main_user_embedding = all_user_embeddings[user_index].unsqueeze(0)
+        
+        user_scores = torch.matmul(main_user_embedding, all_user_embeddings.t()).squeeze()
+        
+        n_top_bottom = min(25, len(user_id_map) // 2 - 1)
+        n_movies = min(50, len(movie_id_map))
+
+        top_users = torch.topk(user_scores, k=n_top_bottom + 1, largest=True)
+        bottom_users = torch.topk(user_scores, k=n_top_bottom, largest=False)
+        
+        if top_users.indices[0] == user_index:
+            top_user_indices = top_users.indices[1:]
+        else:
+            top_user_indices = top_users.indices[:n_top_bottom]
+
+        movie_scores = torch.matmul(main_user_embedding, all_item_embeddings.t()).squeeze()
+        top_movies = torch.topk(movie_scores, k=n_movies, largest=True)
+
+        embeddings_for_umap = torch.cat([
+            main_user_embedding,
+            all_user_embeddings[top_user_indices],
+            all_user_embeddings[bottom_users.indices],
+            all_item_embeddings[top_movies.indices]
+        ], dim=0)
+        
+        umap_reducer = UMAP(n_neighbors=n_neighbors, min_dist=min_dist, n_components=2, random_state=42)
+        embeddings_2d = umap_reducer.fit_transform(embeddings_for_umap.cpu().numpy())
+
+        plot_data = []
+        
+        plot_data.append({
+            'x': embeddings_2d[0, 0],
+            'y': embeddings_2d[0, 1],
+            'type': 'Main User',
+            'id': f"User {user_id}",
+            'score': 1.0
+        })
+        
+        for i, idx in enumerate(top_user_indices):
+            plot_data.append({
+                'x': embeddings_2d[i+1, 0],
+                'y': embeddings_2d[i+1, 1],
+                'type': 'Similar User',
+                'id': f"User {list(user_id_map.keys())[list(user_id_map.values()).index(idx.item())]}",
+                'score': user_scores[idx].item()
+            })
+        
+        for i, idx in enumerate(bottom_users.indices):
+            plot_data.append({
+                'x': embeddings_2d[i+n_top_bottom+1, 0],
+                'y': embeddings_2d[i+n_top_bottom+1, 1],
+                'type': 'Dissimilar User',
+                'id': f"User {list(user_id_map.keys())[list(user_id_map.values()).index(idx.item())]}",
+                'score': user_scores[idx].item()
+            })
+        
+        for i, idx in enumerate(top_movies.indices):
+            movie_id = list(movie_id_map.keys())[list(movie_id_map.values()).index(idx.item()+len(user_id_map))]
+            movie_title = movies[movies['movieId'] == movie_id].iloc[0]['title']
+            plot_data.append({
+                'x': embeddings_2d[i+2*n_top_bottom+1, 0],
+                'y': embeddings_2d[i+2*n_top_bottom+1, 1],
+                'type': 'Movie',
+                'id': movie_title,
+                'score': movie_scores[idx].item()
+            })
+
+        df = pd.DataFrame(plot_data)
+
+        fig = px.scatter(df, x='x', y='y', color='type', symbol='type',
+                         hover_name='id', hover_data=['score'],
+                         color_discrete_map={
+                             'Main User': '#FF0000',
+                             'Similar User': '#00BFFF',
+                             'Dissimilar User': '#FFA500',
+                             'Movie': '#32CD32'
+                         },
+                         symbol_map={
+                             'Main User': 'star',
+                             'Similar User': 'circle',
+                             'Dissimilar User': 'circle',
+                             'Movie': 'diamond'
+                         },
+                         title=f'User-Movie Embedding Space (UMAP) for User {user_id}')
+
+        fig.update_traces(
+            hovertemplate="<b>%{hovertext}</b><br>Score: %{customdata[0]:.4f}<extra></extra>",
+            marker=dict(size=8, line=dict(width=1, color='DarkSlateGrey'))
+        )
+
+        fig.update_layout(
+            legend_title_text='Type',
+            xaxis_title='UMAP Dimension 1',
+            yaxis_title='UMAP Dimension 2',
+            template='plotly_white',
+            height=700,
+            width=1000,
+            font=dict(family="Arial", size=12),
+            legend=dict(itemsizing='constant', title_font_size=14),
+            title=dict(font=dict(size=18))
+        )
+
+        return fig
     
-    trace = go.Scatter(
-        x=embedding_2d[:, 0],
-        y=embedding_2d[:, 1],
-        mode='markers',
-        marker=dict(
-            size=8,
-            color=labels,
-            colorscale='Viridis',
-            showscale=True
-        ),
-        text=labels
-    )
+# def plot_embedding_tsne(embedding, labels):
+#     tsne = TSNE(n_components=2, random_state=42)
+#     embedding_2d = tsne.fit_transform(embedding.detach().cpu().numpy())
     
-    layout = go.Layout(
-        title='t-SNE Visualization of Embeddings',
-        xaxis=dict(title='t-SNE 1'),
-        yaxis=dict(title='t-SNE 2')
-    )
+#     trace = go.Scatter(
+#         x=embedding_2d[:, 0],
+#         y=embedding_2d[:, 1],
+#         mode='markers',
+#         marker=dict(
+#             size=8,
+#             color=labels,
+#             colorscale='Viridis',
+#             showscale=True
+#         ),
+#         text=labels
+#     )
     
-    fig = go.Figure(data=[trace], layout=layout)
-    return fig
+#     layout = go.Layout(
+#         title='t-SNE Visualization of Embeddings',
+#         xaxis=dict(title='t-SNE 1'),
+#         yaxis=dict(title='t-SNE 2')
+#     )
+    
+#     fig = go.Figure(data=[trace], layout=layout)
+#     return fig
 
 def plot_histories():
     # Load data
@@ -153,21 +293,23 @@ def plot_histories():
 
     fig.show()
 
-def plot_recommendations(recommendations: List[Dict[str, Union[str, float]]]):
+def plot_recommendations(recommendations: List[Dict[str, Union[str, float]]], user_id: int):
     """
     Create a plotly bar chart of the top 10 recommended movies.
 
     Args:
         recommendations (List[Dict[str, Union[str, float]]]): List of recommended movies with titles and scores.
     """
+    
     titles = [rec['title'] for rec in recommendations]
     scores = [rec['score'] for rec in recommendations]
 
     fig = go.Figure(data=[go.Bar(x=scores, y=titles, orientation='h')])
     fig.update_layout(
-        title='Top 10 Movie Recommendations',
+        title=f'Top 10 Movie Recommendations for User {user_id}',
         xaxis_title='Recommendation Score',
         yaxis_title='Movie Title',
+        yaxis=dict(autorange="reversed"),
         height=600,
         width=1000
     )
