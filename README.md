@@ -2,6 +2,11 @@
 
 This repository contains my project for the Exam of Information Retrieval @University of Trieste; it consists in the implementation of a Movie Recommender System using Graph Neural Networks (GNNs), specifically leveraging the LightGCN model. The system provides personalized movie recommendations based on user interactions and allows users to get recommendations for movies and users.
 
+<div style="text-align: center;">
+  <img src="images/umap_users_movies.png" alt="Cool Image" style="border: 2px solid #000; border-radius: 10px; max-width: 100%;">
+  <p style="font-style: italic; color: #555;">This is a cool image from our project!</p>
+</div>
+
 ## Table of Contents
 - [Features](#features)
 - [Installation](#installation)
