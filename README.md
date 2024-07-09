@@ -4,7 +4,6 @@ This repository contains my project for the Exam of Information Retrieval @Unive
 
 <div style="text-align: center;">
   <img src="images/umap_users_movies.png" alt="Cool Image" style="border: 2px solid #000; border-radius: 10px; max-width: 100%;">
-  <p style="font-style: italic; color: #555;">This is a cool image from our project!</p>
 </div>
 
 ## Table of Contents
