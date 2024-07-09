@@ -1,5 +1,8 @@
+from typing import List, Dict, Any, Union, Optional
 import torch
-from typing import List, Dict, Any, Union
+import plotly.graph_objects as go
+from visualizations import plot_recommendations
+
 # for reproducibility
 torch.manual_seed(0)
 torch.cuda.manual_seed(0)
@@ -7,7 +10,7 @@ torch.cuda.manual_seed_all(0)
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False 
 
-def recommend_from_user(model: torch.nn.Module, user_id: int, data_handler: Any, excluded_train_items: List[int]) -> Dict[str, Union[str, List[Dict[str, Union[str, float]]]]]:
+def recommend_from_user(model: torch.nn.Module, user_id: int, data_handler: Any, excluded_train_items: Optional[List[int]] = None) -> Dict[str, Union[str, List[Dict[str, Union[str, float]]]]]:
     """
     Recommend movies for a given user.
 
@@ -15,7 +18,7 @@ def recommend_from_user(model: torch.nn.Module, user_id: int, data_handler: Any,
         model (torch.nn.Module): The trained recommendation model.
         user_id (int): The ID of the user for whom to recommend movies.
         data_handler (Any): The data handler containing user and movie data.
-        excluded_train_items (List[int]): List of item indices to exclude from recommendations.
+        excluded_train_items (Optional[List[int]]): List of item indices to exclude from recommendations. Optional.
 
     Returns:
         Dict[str, Union[str, List[Dict[str, Union[str, float]]]]]: A dictionary containing recommendations or an error message.
@@ -34,15 +37,19 @@ def recommend_from_user(model: torch.nn.Module, user_id: int, data_handler: Any,
         user_embedding, item_embedding = model.get_embeddings(user_indices=torch.tensor([user_index]), 
                                                                       item_indices=torch.arange(len(movie_id_map)))
     
+        # Normalize user embedding
+        user_embedding = user_embedding / torch.norm(user_embedding, dim=1, keepdim=True)
+        item_embedding = item_embedding / torch.norm(item_embedding, dim=1, keepdim=True)
+        
         scores = torch.matmul(user_embedding, item_embedding.t()).squeeze()
         
         # Get all movie indices sorted by score
         _, sorted_indices = torch.sort(scores, descending=True)
-        sorted_indices 
+        
         recommendations = []
 
         for idx in sorted_indices:
-            if idx.item() in excluded_train_items:
+            if excluded_train_items and idx.item() in excluded_train_items:
                 continue
 
             movie_id = list(movie_id_map.keys())[list(movie_id_map.values()).index(idx.item()+len(user_id_map))]
@@ -120,17 +127,26 @@ if __name__ == '__main__':
 
     model = LightGCN(num_users, num_items)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu') 
-    # if best_model.pth is in the same directory as this file
     if os.path.exists('best_model.pth'):
         model.load_state_dict(torch.load('best_model.pth', map_location=device))
     model.eval()
-    user_ids = data_handler.user_id_map.keys()
-    user_id = list(user_ids)[0]
-    movie_id = list(data_handler.movie_id_map.keys())[0]
+    
+    user_ids = list(data_handler.user_id_map.keys())
+    suggested_user = user_ids[0]
+    
+    print(f"Please enter a user ID (suggested user: {suggested_user}):")
+    user_id = int(input())
 
     train_data, _, _ = data_handler.get_datasets()
-    train_edge_items = train_data.edge_index[1, train_data.edge_index[0, :] == 0] - len(user_ids) # take items of user 0
-    train_edge_users = train_data.edge_index[0, train_data.edge_index[1, :]==0]
-    print(recommend_from_user(model, user_id, data_handler, train_edge_items))
-    print(recommend_from_movie(model, movie_id, data_handler, train_edge_users))
-
+    train_edge_items = train_data.edge_index[1, train_data.edge_index[0, :] == data_handler.user_id_map[user_id]] - len(user_ids)
+    
+    recommendations = recommend_from_user(model, user_id, data_handler, train_edge_items)
+    
+    if 'error' in recommendations:
+        print(recommendations['error'])
+    else:
+        print("Top 10 Recommendations:")
+        for i, rec in enumerate(recommendations['recommendations'], 1):
+            print(f"{i}. {rec['title']} (Score: {rec['score']:.4f})")
+        
+        plot_recommendations(recommendations['recommendations'])

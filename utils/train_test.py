@@ -1,11 +1,12 @@
+from typing import Tuple
 import torch
-import torch.optim as optim
+from torch import optim
 import numpy as np
-# Unfortunately, for the current version of torch geometric we cannot use the structured_negative_sampling function for Bipartite Graphs:(
+# Unfortunately, for the current version of torch geometric we cannot use the structured_negative_sampling
+# function for Bipartite Graphs:(
 # from torch_geometric.utils import structured_negative_sampling
 from tqdm import tqdm
 from helpers import get_triplets_indices
-from typing import Tuple
 
 # for reproducibility
 torch.manual_seed(0)
@@ -270,15 +271,20 @@ if __name__ == "__main__":
     data_handler = MovieLensDataHandler('data/movielens-25m/ratings.csv', 'data/movielens-25m/movies.csv')
     train_loader, val_data, test_data = data_handler.get_data_training()
     num_users, num_items = data_handler.get_num_users_items()
-    model = LightGCN(num_users, num_items, dim_h=64, num_layers=3)
+    recsys_model = LightGCN(num_users, num_items, dim_h=64, num_layers=3)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model = model.to(device)
+    model = recsys_model.to(device)
 
     # if there are parameters load them
     if os.path.exists('best_model.pth'):
         model.load_state_dict(torch.load('best_model.pth', map_location=device))
     
-    trained_model, hist_train_loss, hist_val_loss, hist_val_recall = train_model(model, train_loader, val_data, test_data, device, epochs=3)
+    trained_model, hist_train_loss, hist_val_loss, hist_val_recall = train_model(recsys_model, 
+                                                                                 train_loader, 
+                                                                                 val_data, 
+                                                                                 test_data, 
+                                                                                 device, 
+                                                                                 epochs=3)
 
     np.save('data/histories/hist_train_loss.npy', hist_train_loss)
     np.save('data/histories/hist_val_loss.npy', hist_val_loss)

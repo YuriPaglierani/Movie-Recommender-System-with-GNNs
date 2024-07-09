@@ -1,3 +1,4 @@
+from typing import Dict, List, Union
 import plotly.graph_objs as go
 import networkx as nx
 import numpy as np
@@ -150,4 +151,24 @@ def plot_histories():
     fig.update_yaxes(title_text="Loss", showgrid=True, gridwidth=1, gridcolor='lightgray', row=1, col=1)
     fig.update_yaxes(title_text="Recall@k", showgrid=True, gridwidth=1, gridcolor='lightgray', row=2, col=1)
 
+    fig.show()
+
+def plot_recommendations(recommendations: List[Dict[str, Union[str, float]]]):
+    """
+    Create a plotly bar chart of the top 10 recommended movies.
+
+    Args:
+        recommendations (List[Dict[str, Union[str, float]]]): List of recommended movies with titles and scores.
+    """
+    titles = [rec['title'] for rec in recommendations]
+    scores = [rec['score'] for rec in recommendations]
+
+    fig = go.Figure(data=[go.Bar(x=scores, y=titles, orientation='h')])
+    fig.update_layout(
+        title='Top 10 Movie Recommendations',
+        xaxis_title='Recommendation Score',
+        yaxis_title='Movie Title',
+        height=600,
+        width=1000
+    )
     fig.show()
