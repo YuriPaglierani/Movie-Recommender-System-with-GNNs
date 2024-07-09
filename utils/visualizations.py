@@ -1,7 +1,10 @@
 import plotly.graph_objs as go
 import networkx as nx
+import numpy as np
 import torch
 from sklearn.manifold import TSNE
+import numpy as np
+from plotly.subplots import make_subplots
 
 # for reproducibility
 torch.manual_seed(0)
@@ -107,3 +110,44 @@ def plot_embedding_tsne(embedding, labels):
     
     fig = go.Figure(data=[trace], layout=layout)
     return fig
+
+def plot_histories():
+    # Load data
+    hist_train_loss = np.load('data/histories/hist_train_loss.npy')
+    hist_val_loss = np.load('data/histories/hist_val_loss.npy')
+    hist_val_recall = np.load('data/histories/hist_val_recall.npy')
+
+    fig = make_subplots(rows=2, cols=1, subplot_titles=("Training and Validation Loss", ""),
+                        vertical_spacing=0.1)
+
+    fig.add_trace(go.Scatter(x=np.arange(len(hist_train_loss)), y=hist_train_loss, 
+                            mode='lines', name='Train Loss', line=dict(color='#1f77b4', width=2)), row=1, col=1)
+    fig.add_trace(go.Scatter(x=np.arange(len(hist_val_loss)), y=hist_val_loss, 
+                            mode='lines', name='Validation Loss', line=dict(color='#ff7f0e', width=2)), row=1, col=1)
+
+    fig.add_trace(go.Scatter(x=np.arange(len(hist_val_recall)), y=hist_val_recall, 
+                            mode='lines', name='Recall@k', line=dict(color='#2ca02c', width=2)), row=2, col=1)
+
+    best_epoch = np.argmax(hist_val_recall)
+    fig.add_annotation(x=best_epoch, y=hist_val_recall[best_epoch],
+                    text=f"Best Model<br>Epoch {best_epoch}<br>Recall@k: {hist_val_recall[best_epoch]:.4f}",
+                    bgcolor="#f0f0f0", bordercolor="#636363", borderwidth=2,
+                    font=dict(size=12, color="#636363"), align="left",
+                    row=2, col=1)
+
+    fig.update_layout(
+        height=800, width=1000,
+        title_text="Model Training Results",
+        title_font=dict(size=24),
+        showlegend=True,
+        legend=dict(x=1.05, y=0.5),
+        plot_bgcolor='white',
+        font=dict(family="Arial", size=14),
+    )
+
+    fig.update_xaxes(title_text="Epoch", showgrid=True, gridwidth=1, gridcolor='lightgray', row=1, col=1)
+    fig.update_xaxes(title_text="Epoch", showgrid=True, gridwidth=1, gridcolor='lightgray', row=2, col=1)
+    fig.update_yaxes(title_text="Loss", showgrid=True, gridwidth=1, gridcolor='lightgray', row=1, col=1)
+    fig.update_yaxes(title_text="Recall@k", showgrid=True, gridwidth=1, gridcolor='lightgray', row=2, col=1)
+
+    fig.show()

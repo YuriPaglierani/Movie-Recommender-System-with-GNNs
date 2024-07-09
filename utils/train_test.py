@@ -265,6 +265,7 @@ if __name__ == "__main__":
     
     from data.dataset_handler import MovieLensDataHandler
     from models.light_gcn import LightGCN
+    from visualizations import plot_histories
 
     data_handler = MovieLensDataHandler('data/movielens-25m/ratings.csv', 'data/movielens-25m/movies.csv')
     train_loader, val_data, test_data = data_handler.get_data_training()
@@ -279,24 +280,8 @@ if __name__ == "__main__":
     
     trained_model, hist_train_loss, hist_val_loss, hist_val_recall = train_model(model, train_loader, val_data, test_data, device, epochs=3)
 
-    np.save('data/hist_train_loss.npy', hist_train_loss)
-    np.save('data/hist_val_loss.npy', hist_val_loss)
-    np.save('data/hist_val_recall.npy', hist_val_recall)
+    np.save('data/histories/hist_train_loss.npy', hist_train_loss)
+    np.save('data/histories/hist_val_loss.npy', hist_val_loss)
+    np.save('data/histories/hist_val_recall.npy', hist_val_recall)
 
-    import plotly.graph_objects as go
-
-    hist_train_loss = np.load('data/hist_train_loss.npy')   
-    hist_val_loss = np.load('data/hist_val_loss.npy')
-    hist_val_recall = np.load('data/hist_val_recall.npy')
-
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=np.arange(len(hist_train_loss)), y=hist_train_loss, mode='lines', name='Train Loss'))
-    fig.add_trace(go.Scatter(x=np.arange(len(hist_val_loss)), y=hist_val_loss, mode='lines', name='Validation Loss'))
-    fig.update_layout(title='Training and Validation Loss', xaxis_title='Epoch', yaxis_title='Loss')
-    fig.show()
-
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=np.arange(len(hist_val_recall)), y=hist_val_recall, mode='lines', name='Recall@k'))
-    fig.update_layout(title='Recall@k', xaxis_title='Epoch', yaxis_title='Recall@k')
-    fig.add_annotation(x=len(hist_val_recall)-1, y=hist_val_recall[-1], text="Best Model", showarrow=True, arrowhead=1)
-    fig.show()
+    plot_histories()
