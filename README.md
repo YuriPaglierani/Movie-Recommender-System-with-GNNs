@@ -38,20 +38,13 @@ This repository contains my project for the Exam of Information Retrieval @Unive
     ```bash
     python utils/train_test.py
     ```
-2. Run the app (still in developement):
-    ```bash
-    python main.py
-    ```
-3. Make recommendations from terminal:
+
+2. Make recommendations from terminal:
     ```bash
     python utils/recommend.py
     ```
 
-Choose an option:
-* 1: User to Movie
-* 2: Movie to User
-
-Enter the User ID or Movie ID as prompted to get recommendations.
+Enter the User ID as prompted to get recommendations.
 
 ## Data
 The dataset used is the MovieLens 25M dataset, which includes 25 million user-movie interactions. The data is preprocessed and split into training and testing sets, through the files data/reviews.csv, and data/movies.csv
